@@ -12,3 +12,7 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# Outputs
+agent_service/agent_out/
+agent_out/
