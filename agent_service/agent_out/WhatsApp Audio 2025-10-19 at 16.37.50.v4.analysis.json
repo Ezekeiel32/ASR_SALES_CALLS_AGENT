@@ -1,0 +1,24 @@
+{
+  "sourceAudio": "/home/chezy/COPILOT/agent_service/WhatsApp Audio 2025-10-19 at 16.37.50.aac",
+  "transcriptFile": "/home/chezy/COPILOT/agent_service/WhatsApp Audio 2025-10-19 at 16.37.50.v4.transcript.json",
+  "summary": "**Call Summary:**\n\n- The sales assistant introduced the Shahal remote medical service, explaining that it enables ECG transmission from any location, with immediate ambulance dispatch if abnormalities are detected. \n- The customer, a resident of a city in Israel in his late 50s, disclosed having four arterial blockages and awaiting bypass surgery, but currently asymptomatic. \n- Key products discussed: Shahal service, ECG device, and troponin biomarker test. \n- Objections raised by the customer:\n  - \"אני לא רוצה, אני משגעים אותי חברים שכם, אני לא מלא.\" (Expressing reluctance due to peer pressure and lack of immediate need.)\n  - He questioned the cost, suggesting it might be free, but the sales assistant clarified, \"אין שום דבר בחינם\" (There is nothing free), emphasizing the life-saving value.\n- The sales assistant addressed objections by highlighting early detection benefits, noting a trend toward younger users, and explaining that subscription expedites hospital care. \n- Commitments: The customer agreed with the importance in principle, saying \"מסכים איתך\" (I agree with you), but made no firm commitment without cost details. \n- No specific dates were set; discussion about a meeting was hypothetical.\n\n**Next Steps:**\n- Arrange a meeting with a local Shahal representative for a service demonstration and cost discussion.\n- Follow up with the customer to address concerns and provide additional information.",
+  "keyPoints": [
+    "The sales assistant introduced the Shahal remote medical service, explaining that it enables ECG transmission from any location, with immediate ambulance dispatch if abnormalities are detected.",
+    "The customer, a resident of a city in Israel in his late 50s, disclosed having four arterial blockages and awaiting bypass surgery, but currently asymptomatic.",
+    "Key products discussed: Shahal service, ECG device, and troponin biomarker test.",
+    "Objections raised by the customer:",
+    "\"אני לא רוצה, אני משגעים אותי חברים שכם, אני לא מלא.\" (Expressing reluctance due to peer pressure and lack of immediate need.)",
+    "He questioned the cost, suggesting it might be free, but the sales assistant clarified, \"אין שום דבר בחינם\" (There is nothing free), emphasizing the life-saving value.",
+    "The sales assistant addressed objections by highlighting early detection benefits, noting a trend toward younger users, and explaining that subscription expedites hospital care.",
+    "Commitments: The customer agreed with the importance in principle, saying \"מסכים איתך\" (I agree with you), but made no firm commitment without cost details.",
+    "No specific dates were set; discussion about a meeting was hypothetical.",
+    "Arrange a meeting with a local Shahal representative for a service demonstration and cost discussion."
+  ],
+  "actionItems": [],
+  "entities": {},
+  "sentiment": null,
+  "topics": [],
+  "confidence": null,
+  "runId": "nvidia-2bb92024-5be8-40d9-bef5-1358b7019136",
+  "createdAt": "2025-10-20T00:08:35.964666+00:00"
+}

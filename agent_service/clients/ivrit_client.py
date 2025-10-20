@@ -108,11 +108,32 @@ class IvritClient:
 			if resp.status_code >= 400:
 				raise IvritTranscriptionError(f"RunPod error {resp.status_code}: {resp.text}")
 			payload = resp.json()
+
+			# For runsync: sometimes returns IN_PROGRESS with an id → poll until done
 			if mode == "runsync":
-				# Expect transcript in output of synchronous response
+				status_value = payload.get("status") if isinstance(payload, dict) else None
 				text = _extract_runpod_output_text(payload)
 				segments = _extract_runpod_segments(payload)
-				return TranscriptionResult(text=text, raw=payload if isinstance(payload, dict) else None, segments=segments)
+				if status_value in ("COMPLETED", "COMPLETED_WITH_ERRORS") and text:
+					return TranscriptionResult(text=text, raw=payload if isinstance(payload, dict) else None, segments=segments)
+				# otherwise poll using id
+				request_id = payload.get("id") if isinstance(payload, dict) else None
+				if not request_id:
+					raise IvritTranscriptionError(f"RunPod runsync did not complete and no id provided: {payload}")
+				status_url = f"{base}/{endpoint}/status/{request_id}"
+				while True:
+					status_resp = await client.get(status_url, headers=headers)
+					if status_resp.status_code >= 400:
+						raise IvritTranscriptionError(f"RunPod status error {status_resp.status_code}: {status_resp.text}")
+					status_payload = status_resp.json()
+					state = status_payload.get("status") if isinstance(status_payload, dict) else None
+					if state in ("COMPLETED", "COMPLETED_WITH_ERRORS"):
+						text2 = _extract_runpod_output_text(status_payload)
+						segments2 = _extract_runpod_segments(status_payload)
+						return TranscriptionResult(text=text2, raw=status_payload if isinstance(status_payload, dict) else None, segments=segments2)
+					if state in ("FAILED", "CANCELLED"):
+						raise IvritTranscriptionError(f"RunPod job failed: {status_payload}")
+					await asyncio.sleep(s.ivrit_runpod_status_poll_interval_seconds)
 
 			# mode == "run" => poll /status until completed
 			request_id = payload.get("id") if isinstance(payload, dict) else None
@@ -153,18 +174,43 @@ def _extract_text(payload: Any) -> str:
 def _extract_runpod_output_text(payload: Any) -> str:
 	if isinstance(payload, dict):
 		output = payload.get("output")
+		# Common dict-shaped output
 		if isinstance(output, dict):
 			for key in ("text", "transcript", "transcription"):
 				val = output.get(key)
 				if isinstance(val, str):
 					return val
-			# Some templates use nested data
-			data = output.get("data") if isinstance(output.get("data"), dict) else None
-			if data:
-				for key in ("text", "transcript", "transcription"):
-					val = data.get(key)
-					if isinstance(val, str):
-						return val
+				# Some templates use nested data
+				data = output.get("data") if isinstance(output.get("data"), dict) else None
+				if data:
+					for key in ("text", "transcript", "transcription"):
+						val = data.get(key)
+						if isinstance(val, str):
+							return val
+		# Some RunPod templates return a list with an object containing 'result' which
+		# is a list (sometimes list of lists) of segment dicts that each have 'text'
+		if isinstance(output, list):
+			for item in output:
+				if not isinstance(item, dict):
+					continue
+				result_obj = item.get("result")
+				if isinstance(result_obj, list):
+					flat: list[dict[str, Any]] = []
+					for sub in result_obj:
+						if isinstance(sub, list):
+							for seg in sub:
+								if isinstance(seg, dict):
+									flat.append(seg)
+						elif isinstance(sub, dict):
+							flat.append(sub)
+					if flat:
+						texts: list[str] = []
+						for seg in flat:
+							t = seg.get("text")
+							if isinstance(t, str) and t.strip():
+								texts.append(t.strip())
+						if texts:
+							return " ".join(texts)
 	return _extract_text(payload)
 
 
@@ -175,6 +221,23 @@ def _extract_runpod_segments(payload: Any) -> list[dict[str, Any]] | None:
 			segments = output.get("segments")
 			if isinstance(segments, list):
 				return [s for s in segments if isinstance(s, dict)]
+		# Handle list-shaped outputs with 'result' nested arrays
+		if isinstance(output, list):
+			for item in output:
+				if not isinstance(item, dict):
+					continue
+				result_obj = item.get("result")
+				if isinstance(result_obj, list):
+					flat: list[dict[str, Any]] = []
+					for sub in result_obj:
+						if isinstance(sub, list):
+							for seg in sub:
+								if isinstance(seg, dict):
+									flat.append(seg)
+						elif isinstance(sub, dict):
+							flat.append(sub)
+					if flat:
+						return flat
 	return None
 
 

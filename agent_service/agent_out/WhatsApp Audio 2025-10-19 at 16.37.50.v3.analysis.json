@@ -1,0 +1,24 @@
+{
+  "sourceAudio": "/home/chezy/COPILOT/agent_service/WhatsApp Audio 2025-10-19 at 16.37.50.aac",
+  "transcriptFile": "/home/chezy/COPILOT/agent_service/WhatsApp Audio 2025-10-19 at 16.37.50.v3.transcript.json",
+  "summary": "### Call Summary\n- The call was between a Shahal medical sales representative and a prospect regarding remote cardiac monitoring services.\n- The prospect is a 59-year-old individual with pre-existing heart conditions, awaiting bypass surgery, but currently asymptomatic.\n- Discussion focused on the benefits of early detection and rapid response in cardiac events.\n\n### Products Highlighted\n- **Shahal Remote Medicine Service**: A telemedicine platform for heart monitoring, enabling remote ECG transmission via a device that sends data within 12 seconds from any location.\n- **Troponin Biomarker Test**: A complementary at-home test that detects elevated troponin levels, indicating early signs of a cardiac event.\n\n### Objections Discussed\n- Prospect's reluctance: \"אני לא רוצה, אני משגעים אותי חברים שכם, אני לא מלא\" (I don't want it; friends are pressuring me, but I'm not convinced).\n- Perceived lack of need: \"אין לי שום בעיה רפואית כרגע\" (I have no medical problems currently).\n- Cost concerns: Prospect assumed the service was free, but salesperson clarified it is not; prospect insisted on knowing the price before commitment.\n\n### Next Steps\n- Schedule a demonstration meeting with a Shahal representative to explain the service, usage, and costs.\n- Prospect open to a meeting but requires cost details first; no immediate commitment.\n- Salesperson to follow up for scheduling after providing pricing information.\n\n### Commitments and Dates\n- **Commitments**: Prospect acknowledged the importance of early detection but did not agree to purchase. Agreed to consider after cost disclosure.\n- **Dates**: No surgery date set for the prospect. Proposed meeting for the same evening was declined; future meeting to be arranged.",
+  "keyPoints": [
+    "The call was between a Shahal medical sales representative and a prospect regarding remote cardiac monitoring services.",
+    "The prospect is a 59-year-old individual with pre-existing heart conditions, awaiting bypass surgery, but currently asymptomatic.",
+    "Discussion focused on the benefits of early detection and rapid response in cardiac events.",
+    "**Shahal Remote Medicine Service**: A telemedicine platform for heart monitoring, enabling remote ECG transmission via a device that sends data within 12 seconds from any location.",
+    "**Troponin Biomarker Test**: A complementary at-home test that detects elevated troponin levels, indicating early signs of a cardiac event.",
+    "Prospect's reluctance: \"אני לא רוצה, אני משגעים אותי חברים שכם, אני לא מלא\" (I don't want it; friends are pressuring me, but I'm not convinced).",
+    "Perceived lack of need: \"אין לי שום בעיה רפואית כרגע\" (I have no medical problems currently).",
+    "Cost concerns: Prospect assumed the service was free, but salesperson clarified it is not; prospect insisted on knowing the price before commitment.",
+    "Schedule a demonstration meeting with a Shahal representative to explain the service, usage, and costs.",
+    "Prospect open to a meeting but requires cost details first; no immediate commitment."
+  ],
+  "actionItems": [],
+  "entities": {},
+  "sentiment": null,
+  "topics": [],
+  "confidence": null,
+  "runId": "nvidia-518a9866-59eb-4cf4-8ad5-0152f89542e3",
+  "createdAt": "2025-10-20T00:06:56.312284+00:00"
+}

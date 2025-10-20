@@ -1,0 +1,24 @@
+{
+  "sourceAudio": "/home/chezy/COPILOT/agent_service/WhatsApp Audio 2025-10-19 at 16.37.50.aac",
+  "transcriptFile": "/home/chezy/COPILOT/agent_service/WhatsApp Audio 2025-10-19 at 16.37.50.v5.transcript.json",
+  "summary": "- **Call Overview**: A medical sales call discussing remote cardiac monitoring services with a prospect who has pre-existing heart conditions and is awaiting bypass surgery. The salesperson emphasized early detection benefits.\n\n- **Products Highlighted**:\n  - Shahal remote ECG monitoring device: Allows real-time ECG transmission from any location, with alerts for abnormalities.\n  - Troponin biomarker test: A quick blood test for early detection of heart attacks, integrated with Shahal's service.\n\n- **Objections Raised by Prospect**:\n  - \"אני לא רוצה\" (I don't want): Prospect feels no current need, as he has no active medical issues.\n  - Cost concerns: Prospect assumed the service might be expensive, but salesperson countered that cost is secondary to lifesaving benefits.\n  - Hesitation due to external pressure: Mentioned that friends are encouraging him, but he is not convinced.\n\n- **Next Steps Discussed**:\n  - Arrange a non-obligatory demonstration meeting with a Shahal representative to explain product usage.\n  - Prospect to consider the service further, with a focus on peace of mind pre-surgery.\n\n- **Commitments Made**:\n  - Prospect agreed to think about the service but did not commit to purchasing.\n  - Salesperson confirmed that the initial meeting involves no financial obligation.\n\n- **Dates Mentioned**:\n  - No specific dates set for the meeting or surgery; discussion included potential meetings \"today\" or in the future, but nothing finalized.\n\n**Next Steps**:\n- Schedule a follow-up call to discuss prospect's decision.\n- Coordinate with local representative for a demonstration visit if interested.",
+  "keyPoints": [
+    "**Call Overview**: A medical sales call discussing remote cardiac monitoring services with a prospect who has pre-existing heart conditions and is awaiting bypass surgery. The salesperson emphasized early detection benefits.",
+    "**Products Highlighted**:",
+    "Shahal remote ECG monitoring device: Allows real-time ECG transmission from any location, with alerts for abnormalities.",
+    "Troponin biomarker test: A quick blood test for early detection of heart attacks, integrated with Shahal's service.",
+    "**Objections Raised by Prospect**:",
+    "\"אני לא רוצה\" (I don't want): Prospect feels no current need, as he has no active medical issues.",
+    "Cost concerns: Prospect assumed the service might be expensive, but salesperson countered that cost is secondary to lifesaving benefits.",
+    "Hesitation due to external pressure: Mentioned that friends are encouraging him, but he is not convinced.",
+    "**Next Steps Discussed**:",
+    "Arrange a non-obligatory demonstration meeting with a Shahal representative to explain product usage."
+  ],
+  "actionItems": [],
+  "entities": {},
+  "sentiment": null,
+  "topics": [],
+  "confidence": null,
+  "runId": "nvidia-f0ea13f1-273a-4af2-9de5-5259fc8d9a4a",
+  "createdAt": "2025-10-20T00:09:13.945609+00:00"
+}

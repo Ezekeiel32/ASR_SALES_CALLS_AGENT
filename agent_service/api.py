@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import math
 import re
 import uuid
@@ -94,25 +95,43 @@ def _safe_text_from_segments(segments: list[dict[str, Any]] | None) -> str:
 @app.post("/transcribe")
 async def transcribe(request: Request, file: UploadFile | None = File(None)) -> JSONResponse:
 	data: bytes | None = None
-	filename: str = "audio.wav"
+	filename: str = request.headers.get("x-filename", "audio.wav")
 	language: str | None = None
 	# 1) If multipart file provided, prefer that
 	if file is not None:
 		data = await file.read()
 		filename = file.filename or filename
 	else:
-		# 2) Otherwise, accept JSON body with { url, language, filename }
-		try:
-			body = await request.json()
-			model = TranscribeUrlRequest(**body)
-			language = model.language
-			filename = model.filename or filename
-			async with httpx.AsyncClient(timeout=settings.request_timeout_seconds) as client:
-				resp = await client.get(model.url)
-				resp.raise_for_status()
-				data = resp.content
-		except Exception as e:  # noqa: BLE001
-			raise HTTPException(status_code=400, detail=f"Provide a file upload or JSON body with url. Error: {e}")
+		# 2) If content-type is audio/* or application/octet-stream, read raw body as audio
+		ct = (request.headers.get("content-type") or "").lower()
+		if ct.startswith("audio/") or ct.startswith("application/octet-stream"):
+			data = await request.body()
+		else:
+			# 3) Otherwise, accept JSON body with { url, language, filename } or { base64, filename }
+			try:
+				body = await request.json()
+				# base64 path
+				if isinstance(body, dict) and "base64" in body:
+					b64 = body.get("base64")
+					if not isinstance(b64, str):
+						raise ValueError("base64 field must be a string")
+					# handle potential data URI prefix
+					if "," in b64 and b64.strip().startswith("data:"):
+						b64 = b64.split(",", 1)[1]
+					data = base64.b64decode(b64)
+					language = body.get("language") or None
+					if isinstance(body.get("filename"), str):
+						filename = body.get("filename")
+				else:
+					model = TranscribeUrlRequest(**body)
+					language = model.language
+					filename = model.filename or filename
+					async with httpx.AsyncClient(timeout=settings.request_timeout_seconds) as client:
+						resp = await client.get(model.url)
+						resp.raise_for_status()
+						data = resp.content
+			except Exception as e:  # noqa: BLE001
+				raise HTTPException(status_code=400, detail=f"Provide a file upload, raw audio body, JSON with base64, or JSON with url. Error: {e}")
 
 	if data is None:
 		raise HTTPException(status_code=400, detail="No audio data provided")

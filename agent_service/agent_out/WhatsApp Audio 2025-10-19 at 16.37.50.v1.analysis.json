@@ -1,0 +1,24 @@
+{
+  "sourceAudio": "/home/chezy/COPILOT/agent_service/WhatsApp Audio 2025-10-19 at 16.37.50.aac",
+  "transcriptFile": "/home/chezy/COPILOT/agent_service/WhatsApp Audio 2025-10-19 at 16.37.50.v1.transcript.json",
+  "summary": "Here is a concise summary of the medical sales call transcript, with PHI redacted and quotes kept in the original Hebrew. The summary is structured in bullet points for clarity, followed by a 'Next steps' section.\n\n### Call Summary\n- **Products Discussed**: \n  - Shahal (שחל) remote cardiac monitoring service, including an ECG (אקגה) transmission device and a troponin biomarker test for early heart attack detection.\n  - Emphasis on the service's ability to provide real-time alerts and expedite emergency response, regardless of the user's location.\n\n- **Key Points from Sales Pitch**:\n  - The sales assistant highlighted that Shahal's service can save lives by detecting abnormalities early, reducing wait times in emergencies, and improving recovery outcomes.\n  - Quotes: \"כל המחשור שלנו הוא משבר מרחוק, מכל מקום שאתה נמצא\" and \"אם תופסים את זה בזמן, הנזק הוא לא משמוטי.\"\n  - Mentioned that the average age of users has decreased, targeting younger demographics with cardiac risks.\n\n- **Customer Objections**:\n  - The customer expressed no immediate need, stating, \"אני לא צריך, אני יודע מה המצב שלי, אבל אין לי שום בעיה רפואית כרגע.\"\n  - Raised cost concerns, questioning if it's free: \"יש פה משהו בחינם? ... אין שום דבר בחינם.\"\n  - Hesitant to commit without knowing pricing: \"אין סיכוי שאני... אז עמנות בלי שאני יודע כמה זה עולה.\"\n\n- **Customer's Situation**:\n  - Redacted PHI: The customer is a 59-year-old individual with a history of four arterial blockages, awaiting bypass surgery (no date set).\n  - Initially skeptical but acknowledged the importance of preventive care after discussion.\n\n- **Commitments Made**:\n  - No firm commitment from the customer; they agreed to consider the service but did not schedule anything.\n  - The sales assistant offered a non-binding demonstration: \"הפגישה לא מחייבת.\"\n\n### Next Steps\n- The sales assistant proposed sending a Shahal representative to the customer's home for a product demonstration and explanation.\n- No specific date was set; the customer suggested \"עוד שנה\" (next year), but the assistant encouraged sooner action.\n- Follow-up will be arranged based on customer availability, with a focus on educating without pressure.",
+  "keyPoints": [
+    "**Products Discussed**:",
+    "Shahal (שחל) remote cardiac monitoring service, including an ECG (אקגה) transmission device and a troponin biomarker test for early heart attack detection.",
+    "Emphasis on the service's ability to provide real-time alerts and expedite emergency response, regardless of the user's location.",
+    "**Key Points from Sales Pitch**:",
+    "The sales assistant highlighted that Shahal's service can save lives by detecting abnormalities early, reducing wait times in emergencies, and improving recovery outcomes.",
+    "Quotes: \"כל המחשור שלנו הוא משבר מרחוק, מכל מקום שאתה נמצא\" and \"אם תופסים את זה בזמן, הנזק הוא לא משמוטי.\"",
+    "Mentioned that the average age of users has decreased, targeting younger demographics with cardiac risks.",
+    "**Customer Objections**:",
+    "The customer expressed no immediate need, stating, \"אני לא צריך, אני יודע מה המצב שלי, אבל אין לי שום בעיה רפואית כרגע.\"",
+    "Raised cost concerns, questioning if it's free: \"יש פה משהו בחינם? ... אין שום דבר בחינם.\""
+  ],
+  "actionItems": [],
+  "entities": {},
+  "sentiment": null,
+  "topics": [],
+  "confidence": null,
+  "runId": "nvidia-7ccd3df8-4e9f-46d1-8ddb-a3042920e7bb",
+  "createdAt": "2025-10-20T00:15:44.967062+00:00"
+}
