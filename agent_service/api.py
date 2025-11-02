@@ -211,46 +211,26 @@ async def login(
 	)
 
 
-@app.get("/auth/me")
-async def get_current_user(
-	authorization: str = Header(..., alias="Authorization"),
-	db: Session = Depends(get_db),
+@app.get("/auth/me", response_model=TokenResponse)
+async def get_me(
+	current_user: User = Depends(get_current_user),
+	organization: Organization = Depends(get_current_organization),
 ) -> TokenResponse:
 	"""
 	Get current authenticated user info from JWT token.
 	"""
-	if not authorization:
-		raise HTTPException(status_code=401, detail="Not authenticated")
-	
-	if not authorization.startswith("Bearer "):
-		raise HTTPException(status_code=401, detail="Invalid authorization header")
-	
-	token = authorization.replace("Bearer ", "")
-	payload = decode_access_token(token)
-	
-	if not payload:
-		raise HTTPException(status_code=401, detail="Invalid token")
-	
-	user_id = payload.get("sub")
-	if not user_id:
-		raise HTTPException(status_code=401, detail="Invalid token")
-	
-	# Get user from database
-	user = db.get(User, uuid.UUID(user_id))
-	if not user:
-		raise HTTPException(status_code=401, detail="User not found")
-	
-	org = db.get(Organization, user.organization_id)
-	if not org:
-		raise HTTPException(status_code=500, detail="Organization not found")
+	# Recreate token with current user data
+	access_token = create_access_token(
+		data={"sub": str(current_user.id), "org_id": str(organization.id), "email": current_user.email}
+	)
 	
 	return TokenResponse(
-		access_token=token,  # Return same token
+		access_token=access_token,
 		token_type="bearer",
-		user_id=str(user.id),
-		organization_id=str(org.id),
-		email=user.email,
-		name=user.name,
+		user_id=str(current_user.id),
+		organization_id=str(organization.id),
+		email=current_user.email,
+		name=current_user.name,
 	)
 
 
