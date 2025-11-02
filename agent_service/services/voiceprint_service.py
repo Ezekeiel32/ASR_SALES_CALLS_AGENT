@@ -22,10 +22,23 @@ from agent_service.services.s3_model_storage import configure_huggingface_cache_
 configure_huggingface_cache_for_s3()
 
 # Lazy import to avoid speechbrain compatibility issues
+# SpeechBrain changed import paths between versions
+EncoderClassifier = None  # type: ignore[assignment,misc]
 try:
+    # Try newer import path (SpeechBrain 0.5.16+)
     from speechbrain.inference.speaker import EncoderClassifier
-except (AttributeError, ImportError, Exception) as e:
-    EncoderClassifier = None  # type: ignore[assignment,misc]
+except ImportError:
+    try:
+        # Fallback to older import path
+        from speechbrain.pretrained import EncoderClassifier
+    except ImportError:
+        try:
+            # Another possible path
+            from speechbrain import EncoderClassifier
+        except (ImportError, AttributeError) as e:
+            import warnings
+            warnings.warn(f"SpeechBrain not fully available: {e}. Speaker recognition may be limited.")
+except (AttributeError, Exception) as e:
     import warnings
     warnings.warn(f"SpeechBrain not fully available: {e}. Speaker recognition may be limited.")
 
