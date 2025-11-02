@@ -19,7 +19,6 @@ from sqlalchemy.orm import Session
 from agent_service.config import get_settings
 from agent_service.database import get_db
 from agent_service.database.models import Meeting, Organization, Speaker, User
-from agent_service.database.seed_data import get_or_create_default_organization
 from agent_service.auth import (
 	verify_password,
 	get_password_hash,
@@ -135,18 +134,17 @@ async def register(
 	if existing_user:
 		raise HTTPException(status_code=400, detail="Email already registered")
 	
-	# Get or create organization
-	if request.organization_name:
-		# Create new organization
-		org = Organization(
-			name=request.organization_name,
-			subscription_plan="free",
-		)
-		db.add(org)
-		db.flush()  # Get org ID
-	else:
-		# Use default organization
-		org = get_or_create_default_organization(db)
+	# Create organization (required)
+	if not request.organization_name:
+		raise HTTPException(status_code=400, detail="organization_name is required for registration")
+	
+	# Create new organization
+	org = Organization(
+		name=request.organization_name,
+		subscription_plan="free",
+	)
+	db.add(org)
+	db.flush()  # Get org ID
 	
 	# Create user
 	user = User(
@@ -454,14 +452,10 @@ async def upload_meeting(
 				status_code=400, detail=f"Invalid organization_id format: {organization_id}. Expected UUID format."
 			)
 
-		# Verify organization exists, or create default if using default ID
+		# Verify organization exists
 		org = db.get(Organization, org_id)
 		if not org:
-			# If using default organization ID, create it
-			if str(org_id) == "00000000-0000-0000-0000-000000000001":
-				org = get_or_create_default_organization(db)
-			else:
-				raise HTTPException(status_code=404, detail=f"Organization {organization_id} not found")
+			raise HTTPException(status_code=404, detail=f"Organization {organization_id} not found")
 
 		# Save audio to S3 or local storage
 		audio_s3_key = None
