@@ -1,5 +1,10 @@
 // API Client for IvriMeet Backend
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+let API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+
+// Ensure URL has protocol
+if (API_BASE_URL && !API_BASE_URL.startsWith('http://') && !API_BASE_URL.startsWith('https://')) {
+  API_BASE_URL = `https://${API_BASE_URL}`;
+}
 
 export interface Meeting {
   id: string;
@@ -65,20 +70,45 @@ class ApiClient {
     options: RequestInit = {}
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-    });
+    
+    // Add timeout for regular requests (30 seconds)
+    const timeoutDuration = 30 * 1000;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
+    
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+      });
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`API error: ${response.status} - ${error}`);
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`API error: ${response.status} - ${error}`);
+      }
+
+      return response.json();
+    } catch (error) {
+      clearTimeout(timeoutId);
+      
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Request timeout: The server took too long to respond. Please try again.');
+      }
+      
+      if (error instanceof TypeError) {
+        if (error.message.includes('Failed to fetch') || error.message.includes('ERR_TIMED_OUT')) {
+          throw new Error('Network error: Could not connect to server. Please check if the backend is running.');
+        }
+      }
+      
+      throw error;
     }
-
-    return response.json();
   }
 
   // Health check
@@ -86,7 +116,7 @@ class ApiClient {
     return this.request<{ status: string }>('/healthz');
   }
 
-  // Upload meeting audio file
+  // Upload meeting audio file with timeout handling
   async uploadMeeting(file: File, title?: string, organizationId?: string): Promise<UploadMeetingResponse> {
     const formData = new FormData();
     formData.append('file', file);
@@ -98,13 +128,21 @@ class ApiClient {
     const orgId = organizationId || '00000000-0000-0000-0000-000000000001';
     formData.append('organization_id', orgId);
 
+    // Create AbortController for timeout (10 minutes for large audio files)
+    const timeoutDuration = 10 * 60 * 1000; // 10 minutes
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
+
     try {
       const response = await fetch(`${this.baseUrl}/meetings/upload`, {
         method: 'POST',
         body: formData,
         // Don't set Content-Type header - browser will set it automatically with boundary for FormData
         credentials: 'include',
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         let errorText = 'Unknown error';
@@ -118,9 +156,18 @@ class ApiClient {
 
       return response.json();
     } catch (error) {
-      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
-        throw new Error('Network error: Could not connect to server. Please check if the backend is running.');
+      clearTimeout(timeoutId);
+      
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Upload timeout: The request took too long. Please try again or check your connection.');
       }
+      
+      if (error instanceof TypeError) {
+        if (error.message.includes('Failed to fetch') || error.message.includes('ERR_TIMED_OUT')) {
+          throw new Error('Network error: Could not connect to server. Please check if the backend is running and accessible.');
+        }
+      }
+      
       throw error;
     }
   }
