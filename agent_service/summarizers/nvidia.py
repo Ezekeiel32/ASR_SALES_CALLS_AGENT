@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -8,13 +9,24 @@ from openai import AsyncOpenAI
 from agent_service.config import Settings, get_settings
 from agent_service.summarizers.base import SummaryResult, Summarizer
 
+logger = logging.getLogger(__name__)
+
 
 def _load_system_prompt() -> str:
 	"""
 	Load and merge system prompts from markdown files.
 	
+	Follows best practices:
+	- Graceful error handling with logging
+	- Validation of loaded content
+	- Clear error messages for debugging
+	
 	Returns:
 		Merged prompt content from both prompt files
+		
+	Raises:
+		FileNotFoundError: If the primary prompt file is missing
+		ValueError: If the loaded prompt is empty or invalid
 	"""
 	# Get the directory of this file
 	current_dir = Path(__file__).parent.parent
@@ -23,31 +35,70 @@ def _load_system_prompt() -> str:
 	prompt1_path = current_dir / "ivreetmeet-enhanced-prompt.md"
 	prompt2_path = current_dir / "ivreetmeet-enhanced-prompt1.md"
 	
-	# Load first prompt file
-	prompt1_content = ""
-	if prompt1_path.exists():
+	# Load first prompt file (required)
+	if not prompt1_path.exists():
+		error_msg = f"Required prompt file not found: {prompt1_path}"
+		logger.error(error_msg)
+		raise FileNotFoundError(error_msg)
+	
+	try:
 		with open(prompt1_path, "r", encoding="utf-8") as f:
 			prompt1_content = f.read().strip()
-	else:
-		raise FileNotFoundError(f"Prompt file not found: {prompt1_path}")
+		logger.info(f"Loaded primary prompt from {prompt1_path.name} ({len(prompt1_content)} chars)")
+	except Exception as e:
+		error_msg = f"Failed to read prompt file {prompt1_path}: {e}"
+		logger.error(error_msg)
+		raise IOError(error_msg) from e
 	
-	# Load second prompt file and merge
+	if not prompt1_content:
+		error_msg = f"Primary prompt file {prompt1_path.name} is empty"
+		logger.error(error_msg)
+		raise ValueError(error_msg)
+	
+	# Load second prompt file (optional)
 	prompt2_content = ""
 	if prompt2_path.exists():
-		with open(prompt2_path, "r", encoding="utf-8") as f:
-			prompt2_content = f.read().strip()
+		try:
+			with open(prompt2_path, "r", encoding="utf-8") as f:
+				prompt2_content = f.read().strip()
+			if prompt2_content:
+				logger.info(f"Loaded secondary prompt from {prompt2_path.name} ({len(prompt2_content)} chars)")
+			else:
+				logger.warning(f"Secondary prompt file {prompt2_path.name} is empty, skipping merge")
+		except Exception as e:
+			logger.warning(f"Failed to load secondary prompt from {prompt2_path.name}: {e}. Continuing with primary prompt only.")
+			prompt2_content = ""
+	else:
+		logger.info(f"Secondary prompt file {prompt2_path.name} not found, using primary prompt only")
 	
 	# Merge both prompts with a separator
 	if prompt2_content:
 		merged_prompt = f"{prompt1_content}\n\n---\n\n{prompt2_content}"
+		logger.info(f"Merged prompts: total length {len(merged_prompt)} chars")
 	else:
 		merged_prompt = prompt1_content
+	
+	# Validate final prompt
+	if not merged_prompt or len(merged_prompt.strip()) < 100:
+		error_msg = "Loaded prompt is too short or empty after merging"
+		logger.error(error_msg)
+		raise ValueError(error_msg)
 	
 	return merged_prompt
 
 
 # Load the system prompt at module import time
-SYSTEM_PROMPT = _load_system_prompt()
+# This ensures the prompt is loaded once and cached for all requests
+try:
+	SYSTEM_PROMPT = _load_system_prompt()
+except Exception as e:
+	logger.critical(f"Failed to load system prompt: {e}. Service may not function correctly.")
+	# Fallback to a minimal prompt to prevent complete service failure
+	SYSTEM_PROMPT = (
+		"You are an expert meeting analyst specializing in comprehensive, speaker-aware summaries. "
+		"Create detailed, useful, and concise summaries that clearly identify who said what."
+	)
+	logger.warning("Using fallback system prompt. Please check prompt files.")
 
 
 class NvidiaDeepSeekSummarizer(Summarizer):

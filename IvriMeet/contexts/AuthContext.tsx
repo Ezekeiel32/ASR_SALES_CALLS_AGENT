@@ -61,31 +61,63 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       baseUrl = `https://${baseUrl}`;
     }
 
-    const response = await fetch(`${baseUrl}/auth/login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email, password }),
-    });
+    // Retry logic for cold starts (up to 3 attempts with exponential backoff)
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 45000); // 45 seconds timeout
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Login failed' }));
-      throw new Error(error.detail || 'Invalid email or password');
+        const response = await fetch(`${baseUrl}/auth/login`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email, password }),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({ detail: 'Login failed' }));
+          throw new Error(error.detail || 'Invalid email or password');
+        }
+
+        const data = await response.json();
+        const userData: User = {
+          id: data.user_id,
+          email: data.email,
+          name: data.name,
+          organization_id: data.organization_id,
+        };
+
+        setToken(data.access_token);
+        setUser(userData);
+        localStorage.setItem('auth_token', data.access_token);
+        localStorage.setItem('auth_user', JSON.stringify(userData));
+        return; // Success, exit retry loop
+      } catch (err) {
+        clearTimeout(timeoutId);
+        lastError = err instanceof Error ? err : new Error('Login failed');
+        
+        const isTimeout = lastError.message.includes('aborted') || 
+                         lastError.message.includes('timeout') ||
+                         lastError.message.includes('ERR_TIMED_OUT') ||
+                         lastError.message.includes('Failed to fetch');
+        
+        if (!isTimeout || attempt === 2) {
+          // Not a timeout error, or last attempt - throw immediately
+          throw lastError;
+        }
+        
+        // Wait before retry (exponential backoff: 2s, 4s)
+        await new Promise(resolve => setTimeout(resolve, 2000 * Math.pow(2, attempt)));
+        console.debug(`Login attempt ${attempt + 1} failed, retrying...`);
+      }
     }
-
-    const data = await response.json();
-    const userData: User = {
-      id: data.user_id,
-      email: data.email,
-      name: data.name,
-      organization_id: data.organization_id,
-    };
-
-    setToken(data.access_token);
-    setUser(userData);
-    localStorage.setItem('auth_token', data.access_token);
-    localStorage.setItem('auth_user', JSON.stringify(userData));
+    
+    throw lastError || new Error('Login failed after all retries');
   };
 
   const register = async (email: string, password: string, name: string, organizationName: string) => {
@@ -95,36 +127,70 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       baseUrl = `https://${baseUrl}`;
     }
 
-    const response = await fetch(`${baseUrl}/auth/register`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ 
-        email, 
-        password, 
-        name,
-        organization_name: organizationName,
-      }),
-    });
+    // Retry logic for cold starts (up to 3 attempts with exponential backoff)
+    let lastError: Error | null = null;
+    let timeoutId: NodeJS.Timeout | null = null;
+    
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const controller = new AbortController();
+        timeoutId = setTimeout(() => controller.abort(), 45000); // 45 seconds timeout
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Registration failed' }));
-      throw new Error(error.detail || 'Registration failed');
+        const response = await fetch(`${baseUrl}/auth/register`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ 
+            email, 
+            password, 
+            name,
+            organization_name: organizationName,
+          }),
+          signal: controller.signal,
+        });
+
+        if (timeoutId) clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({ detail: 'Registration failed' }));
+          throw new Error(error.detail || 'Registration failed');
+        }
+
+        const data = await response.json();
+        const userData: User = {
+          id: data.user_id,
+          email: data.email,
+          name: data.name,
+          organization_id: data.organization_id,
+        };
+
+        setToken(data.access_token);
+        setUser(userData);
+        localStorage.setItem('auth_token', data.access_token);
+        localStorage.setItem('auth_user', JSON.stringify(userData));
+        return; // Success, exit retry loop
+      } catch (err) {
+        if (timeoutId) clearTimeout(timeoutId);
+        lastError = err instanceof Error ? err : new Error('Registration failed');
+        
+        const isTimeout = lastError.message.includes('aborted') || 
+                         lastError.message.includes('timeout') ||
+                         lastError.message.includes('ERR_TIMED_OUT') ||
+                         lastError.message.includes('Failed to fetch');
+        
+        if (!isTimeout || attempt === 2) {
+          // Not a timeout error, or last attempt - throw immediately
+          throw lastError;
+        }
+        
+        // Wait before retry (exponential backoff: 2s, 4s)
+        await new Promise(resolve => setTimeout(resolve, 2000 * Math.pow(2, attempt)));
+        console.debug(`Registration attempt ${attempt + 1} failed, retrying...`);
+      }
     }
-
-    const data = await response.json();
-    const userData: User = {
-      id: data.user_id,
-      email: data.email,
-      name: data.name,
-      organization_id: data.organization_id,
-    };
-
-    setToken(data.access_token);
-    setUser(userData);
-    localStorage.setItem('auth_token', data.access_token);
-    localStorage.setItem('auth_user', JSON.stringify(userData));
+    
+    throw lastError || new Error('Registration failed after all retries');
   };
 
   const logout = () => {
