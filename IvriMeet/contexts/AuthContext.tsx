@@ -63,10 +63,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     // Retry logic for cold starts (up to 3 attempts with exponential backoff)
     let lastError: Error | null = null;
+    let timeoutId: NodeJS.Timeout | null = null;
+    
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 45000); // 45 seconds timeout
+        timeoutId = setTimeout(() => controller.abort(), 45000); // 45 seconds timeout
 
         const response = await fetch(`${baseUrl}/auth/login`, {
           method: 'POST',
@@ -96,9 +98,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUser(userData);
         localStorage.setItem('auth_token', data.access_token);
         localStorage.setItem('auth_user', JSON.stringify(userData));
+        if (timeoutId) clearTimeout(timeoutId);
         return; // Success, exit retry loop
       } catch (err) {
-        clearTimeout(timeoutId);
+        if (timeoutId) clearTimeout(timeoutId);
         lastError = err instanceof Error ? err : new Error('Login failed');
         
         const isTimeout = lastError.message.includes('aborted') || 
