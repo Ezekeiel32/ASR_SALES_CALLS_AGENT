@@ -3,9 +3,11 @@ import { motion } from 'framer-motion';
 import { Meeting, MeetingStatus } from '../types';
 import apiClient from '../services/api';
 import { PencilIcon, TrashIcon, CopyIcon, MicIcon } from './IconComponents';
+import { useMobile } from '../hooks/useMobile';
 
 const MeetingDetailPage: React.FC<{ meeting: Meeting; onBack: () => void; onRefresh?: () => void; }> = ({ meeting, onBack, onRefresh }) => {
   const [activeTab, setActiveTab] = useState('transcript');
+  const isMobile = useMobile();
 
   const getStatusInfo = (status: MeetingStatus) => {
     switch (status) {
@@ -28,15 +30,15 @@ const MeetingDetailPage: React.FC<{ meeting: Meeting; onBack: () => void; onRefr
       minHeight: 0
     }}>
       {/* Header */}
-      <div style={{ marginBottom: '2rem', flexShrink: 0 }}>
-        <button onClick={onBack} style={backButtonStyle}>&rarr; חזרה לפגישות</button>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h1 style={{ fontSize: '2.25rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center' }}>
-              {meeting.title}
-              <button style={{...iconButtonSmall, color: '#6B7280'}}><PencilIcon width={20} height={20}/></button>
+      <div style={{ marginBottom: isMobile ? '1.5rem' : '2rem', flexShrink: 0 }}>
+        <button onClick={onBack} style={isMobile ? mobileBackButtonStyle : backButtonStyle}>&rarr; חזרה לפגישות</button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '1rem' : '0' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h1 style={{ fontSize: isMobile ? '1.5rem' : '2.25rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <span style={{ wordBreak: 'break-word' }}>{meeting.title}</span>
+              {!isMobile && <button style={{...iconButtonSmall, color: '#6B7280'}}><PencilIcon width={20} height={20}/></button>}
             </h1>
-            <div style={{ display: 'flex', gap: '1rem', color: '#6B7280', marginTop: '0.5rem' }}>
+            <div style={{ display: 'flex', gap: isMobile ? '0.5rem' : '1rem', color: '#6B7280', marginTop: '0.5rem', flexWrap: 'wrap', fontSize: isMobile ? '0.85rem' : '1rem' }}>
               <span>
                 {typeof meeting.date === 'string' 
                     ? new Date(meeting.date).toLocaleString('he-IL', { dateStyle: 'medium', timeStyle: 'short' })
@@ -56,31 +58,35 @@ const MeetingDetailPage: React.FC<{ meeting: Meeting; onBack: () => void; onRefr
               </span>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '0.75rem' }}>
-            <motion.button 
-              style={{...secondaryButtonStyle}}
-              whileHover={{ backgroundColor: '#F9FAFB', borderColor: '#9CA3AF' }}
-              whileTap={{ scale: 0.98 }}
-            >
-              שתף
-            </motion.button>
-            <motion.button 
-              style={{...primaryButtonStyle}}
-              whileHover={{ backgroundColor: '#0D9488' }}
-              whileTap={{ scale: 0.98 }}
-            >
-              יצא
-            </motion.button>
-          </div>
+          {!isMobile && (
+            <div style={{ display: 'flex', gap: '0.75rem', flexShrink: 0 }}>
+              <motion.button 
+                style={{...secondaryButtonStyle}}
+                whileHover={{ backgroundColor: '#F9FAFB', borderColor: '#9CA3AF' }}
+                whileTap={{ scale: 0.98 }}
+              >
+                שתף
+              </motion.button>
+              <motion.button 
+                style={{...primaryButtonStyle}}
+                whileHover={{ backgroundColor: '#0D9488' }}
+                whileTap={{ scale: 0.98 }}
+              >
+                יצא
+              </motion.button>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Tabs */}
-      <div style={{ borderBottom: '1px solid #E5E7EB', marginBottom: '2rem', flexShrink: 0 }}>
-        <button onClick={() => setActiveTab('transcript')} style={{...tabStyle, ...(activeTab === 'transcript' ? activeTabStyle : {})}}>תמלול</button>
-        <button onClick={() => setActiveTab('summary')} style={{...tabStyle, ...(activeTab === 'summary' ? activeTabStyle : {})}}>סיכום AI</button>
-        <button onClick={() => setActiveTab('speakers')} style={{...tabStyle, ...(activeTab === 'speakers' ? activeTabStyle : {})}}>דוברים</button>
-        <button onClick={() => setActiveTab('analytics')} style={{...tabStyle, ...(activeTab === 'analytics' ? activeTabStyle : {})}}>ניתוח</button>
+      <div style={{ borderBottom: '1px solid #E5E7EB', marginBottom: isMobile ? '1rem' : '2rem', flexShrink: 0, overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        <div style={{ display: 'flex', gap: isMobile ? '0.5rem' : '0', minWidth: isMobile ? 'max-content' : 'auto' }}>
+          <button onClick={() => setActiveTab('transcript')} style={{...getTabStyle(isMobile, activeTab === 'transcript')}}>תמלול</button>
+          <button onClick={() => setActiveTab('summary')} style={{...getTabStyle(isMobile, activeTab === 'summary')}}>סיכום AI</button>
+          <button onClick={() => setActiveTab('speakers')} style={{...getTabStyle(isMobile, activeTab === 'speakers')}}>דוברים</button>
+          <button onClick={() => setActiveTab('analytics')} style={{...getTabStyle(isMobile, activeTab === 'analytics')}}>ניתוח</button>
+        </div>
       </div>
 
       {/* Tab Content */}
@@ -100,6 +106,7 @@ const MeetingDetailPage: React.FC<{ meeting: Meeting; onBack: () => void; onRefr
 };
 
 const TranscriptView = ({ meeting }: { meeting: Meeting }) => {
+    const isMobile = useMobile();
     const [transcript, setTranscript] = useState(meeting.transcript);
     const [segments, setSegments] = useState(meeting.transcriptSegments);
     const [loading, setLoading] = useState(false);
@@ -136,7 +143,7 @@ const TranscriptView = ({ meeting }: { meeting: Meeting }) => {
     };
 
     return (
-    <div style={panelStyle}>
+    <div style={getPanelStyle(isMobile)}>
             {loading ? <p>טוען תמלול...</p> : (
                 segments && segments.length > 0 ? (
                     segments.map((segment, index) => (
@@ -158,6 +165,7 @@ const TranscriptView = ({ meeting }: { meeting: Meeting }) => {
 };
 
 const SummaryView = ({ meeting }: { meeting: Meeting }) => {
+    const isMobile = useMobile();
     const [summary, setSummary] = useState(meeting.summary || '');
     const [isLoading, setIsLoading] = useState(false);
 
@@ -200,14 +208,15 @@ const SummaryView = ({ meeting }: { meeting: Meeting }) => {
     }, [meeting.id]);
 
     return (
-        <div style={panelStyle}>
+        <div style={getPanelStyle(isMobile)}>
             {isLoading ? <p>מייצר סיכום...</p> : 
-                <div style={{lineHeight: 1.7, color: '#374151'}} dangerouslySetInnerHTML={createMarkup(summary || 'אין סיכום זמין.')} />}
+                <div style={{lineHeight: 1.7, color: '#374151', fontSize: isMobile ? '0.95rem' : '1rem'}} dangerouslySetInnerHTML={createMarkup(summary || 'אין סיכום זמין.')} />}
         </div>
     )
 };
 
 const SpeakersView = ({ meeting, onRefresh }: { meeting: Meeting; onRefresh?: () => void }) => {
+    const isMobile = useMobile();
     const [unidentifiedSpeakers, setUnidentifiedSpeakers] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
 
@@ -251,7 +260,7 @@ const SpeakersView = ({ meeting, onRefresh }: { meeting: Meeting; onRefresh?: ()
     };
 
     return (
-    <div style={{...panelStyle, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem'}}>
+    <div style={{...getPanelStyle(isMobile), display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(300px, 1fr))', gap: isMobile ? '1rem' : '1.5rem'}}>
         {meeting.speakers?.map(speaker => (
             <div key={speaker.id} style={speakerCardStyle}>
                     <img src={speaker.avatarUrl || `https://i.pravatar.cc/150?u=${speaker.id}`} alt={speaker.name} style={{width: 50, height: 50, borderRadius: '50%'}}/>
@@ -293,9 +302,11 @@ const SpeakersView = ({ meeting, onRefresh }: { meeting: Meeting; onRefresh?: ()
 );
 };
 
-const AnalyticsView = ({ meeting }: { meeting: Meeting }) => (
-    <div style={panelStyle}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+const AnalyticsView = ({ meeting }: { meeting: Meeting }) => {
+    const isMobile = useMobile();
+    return (
+    <div style={getPanelStyle(isMobile)}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '1rem' : '2rem' }}>
             <div>
                 <h3 style={chartTitleStyle}>זמן דיבור</h3>
                 <div style={{...chartContainerStyle, height: '250px'}}>
@@ -318,11 +329,61 @@ const AnalyticsView = ({ meeting }: { meeting: Meeting }) => (
             </div>
         </div>
     </div>
-);
+    );
+};
 
 
 // Styles
-const backButtonStyle: React.CSSProperties = { marginBottom: '1rem', border: 'none', background: 'none', color: '#14B8A6', cursor: 'pointer', fontSize: '1rem', fontWeight: 500 };
+const backButtonStyle: React.CSSProperties = { 
+  marginBottom: '1rem', 
+  border: 'none', 
+  background: 'none', 
+  color: '#14B8A6', 
+  cursor: 'pointer', 
+  fontSize: '1rem', 
+  fontWeight: 500,
+  minHeight: '44px',
+  minWidth: '44px',
+  padding: '0.5rem'
+};
+
+const mobileBackButtonStyle: React.CSSProperties = { 
+  ...backButtonStyle,
+  fontSize: '0.9rem',
+  marginBottom: '0.75rem'
+};
+
+const getTabStyle = (isMobile: boolean, isActive: boolean): React.CSSProperties => ({
+  padding: isMobile ? '0.75rem 1rem' : '1rem 1.5rem',
+  border: 'none',
+  background: 'none',
+  borderBottom: isActive ? '2px solid #14B8A6' : '2px solid transparent',
+  color: isActive ? '#14B8A6' : '#6B7280',
+  cursor: 'pointer',
+  fontSize: isMobile ? '0.9rem' : '1rem',
+  fontWeight: isActive ? 600 : 500,
+  whiteSpace: 'nowrap',
+  minHeight: '44px',
+  transition: 'color 0.2s, border-color 0.2s'
+});
+
+const tabStyle: React.CSSProperties = {
+  padding: '1rem 1.5rem',
+  border: 'none',
+  background: 'none',
+  borderBottom: '2px solid transparent',
+  color: '#6B7280',
+  cursor: 'pointer',
+  fontSize: '1rem',
+  fontWeight: 500,
+  transition: 'color 0.2s, border-color 0.2s'
+};
+
+const activeTabStyle: React.CSSProperties = {
+  borderBottom: '2px solid #14B8A6',
+  color: '#14B8A6',
+  fontWeight: 600
+};
 const primaryButtonStyle: React.CSSProperties = { 
   padding: '0.6rem 1.25rem', 
   border: 'none', 
@@ -345,9 +406,28 @@ const secondaryButtonStyle: React.CSSProperties = {
   fontWeight: 600,
   transition: 'background-color 0.2s, border-color 0.2s, transform 0.1s'
 };
-const iconButtonSmall: React.CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', padding: '0.25rem', color: '#9CA3AF' };
-const tabStyle: React.CSSProperties = { padding: '0.5rem 1rem 1rem 1rem', border: 'none', background: 'none', cursor: 'pointer', fontSize: '1rem', fontWeight: 600, color: '#6B7280', borderBottom: '2px solid transparent' };
-const activeTabStyle: React.CSSProperties = { color: '#14B8A6', borderBottom: '2px solid #14B8A6' };
+const iconButtonSmall: React.CSSProperties = { 
+  background: 'none', 
+  border: 'none', 
+  cursor: 'pointer', 
+  padding: '0.25rem', 
+  color: '#9CA3AF',
+  minWidth: '44px',
+  minHeight: '44px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center'
+};
+
+const getPanelStyle = (isMobile: boolean): React.CSSProperties => ({
+  backgroundColor: 'white', 
+  padding: isMobile ? '1rem' : '2rem', 
+  borderRadius: '12px', 
+  border: '1px solid #E5E7EB',
+  width: '100%',
+  boxSizing: 'border-box'
+});
+
 const panelStyle: React.CSSProperties = { 
   backgroundColor: 'white', 
   padding: '2rem', 

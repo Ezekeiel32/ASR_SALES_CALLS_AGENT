@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UploadCloudIcon, MicIcon } from './IconComponents';
-
 import apiClient from '../services/api';
+import { useMobile } from '../hooks/useMobile';
 
 interface UploadModalProps {
   isOpen: boolean;
@@ -16,6 +16,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose, onSuccess })
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState(false);
+  const isMobile = useMobile();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
@@ -93,7 +94,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose, onSuccess })
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.9, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            style={modalStyle}
+            style={getModalStyle(isMobile)}
             onClick={(e) => e.stopPropagation()}
           >
             <h2 style={{ textAlign: 'center', fontWeight: 600, fontSize: '1.5rem' }}>פגישה חדשה</h2>
@@ -162,11 +163,17 @@ const backdropStyle: React.CSSProperties = {
   backgroundColor: 'rgba(17, 24, 39, 0.6)',
   display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 50
 };
-const modalStyle: React.CSSProperties = {
-  backgroundColor: 'white', padding: '2rem', borderRadius: '12px',
-  width: '90%', maxWidth: '550px',
+const getModalStyle = (isMobile: boolean): React.CSSProperties => ({
+  backgroundColor: 'white', 
+  padding: isMobile ? '1.5rem' : '2rem', 
+  borderRadius: '12px',
+  width: '90%', 
+  maxWidth: '550px',
+  maxHeight: '90vh',
+  overflowY: 'auto',
   boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)',
-};
+  WebkitOverflowScrolling: 'touch',
+});
 const tabStyle: React.CSSProperties = {
     flex: 1, border: 'none', background: 'none', padding: '0.75rem',
     borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem',

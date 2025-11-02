@@ -1,16 +1,18 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
+import { useMobile } from '../hooks/useMobile';
 
 const SettingsPage: React.FC = () => {
     const [activeTab, setActiveTab] = useState('profile');
+    const isMobile = useMobile();
 
   return (
-    <div style={{ paddingTop: '80px', maxWidth: '800px', margin: '0 auto' }}>
-      <h1 style={{ fontSize: '2.25rem', fontWeight: 700, marginBottom: '2rem' }}>הגדרות</h1>
+    <div style={{ paddingTop: isMobile ? '70px' : '80px', maxWidth: '800px', margin: '0 auto', paddingLeft: isMobile ? '1rem' : '0', paddingRight: isMobile ? '1rem' : '0' }}>
+      <h1 style={{ fontSize: isMobile ? '1.75rem' : '2.25rem', fontWeight: 700, marginBottom: isMobile ? '1.5rem' : '2rem' }}>הגדרות</h1>
       
-      <div style={{ display: 'flex', gap: '2rem' }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '1.5rem' : '2rem' }}>
         {/* Settings Navigation */}
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', flexBasis: '200px' }}>
+        <nav style={{ display: 'flex', flexDirection: isMobile ? 'row' : 'column', gap: '0.25rem', flexBasis: isMobile ? 'auto' : '200px', overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch' }}>
           <button onClick={() => setActiveTab('profile')} style={{ ...navButtonStyle, ...(activeTab === 'profile' ? activeNavButtonStyle : {}) }}>פרופיל</button>
           <button onClick={() => setActiveTab('notifications')} style={{ ...navButtonStyle, ...(activeTab === 'notifications' ? activeNavButtonStyle : {}) }}>התראות</button>
           <button onClick={() => setActiveTab('organization')} style={{ ...navButtonStyle, ...(activeTab === 'organization' ? activeNavButtonStyle : {}) }}>ארגון</button>

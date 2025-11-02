@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Meeting, MeetingStatus } from '../types';
 import { TrashIcon } from './IconComponents';
+import { useMobile } from '../hooks/useMobile';
 
 interface MeetingCardProps {
   meeting: Meeting;
@@ -40,7 +41,8 @@ const StatusBadge = ({ status }: { status: MeetingStatus }) => {
 };
 
 const MeetingCard: React.FC<MeetingCardProps> = ({ meeting, isListView, onClick, onDelete }) => {
-  const cardStyles = isListView ? listViewStyle : gridViewStyle;
+  const isMobile = useMobile();
+  const cardStyles = isListView ? listViewStyle(isMobile) : gridViewStyle(isMobile);
   const [isHovered, setIsHovered] = useState(false);
   const canDelete = onDelete && meeting.status !== MeetingStatus.Processing;
 
@@ -156,9 +158,9 @@ const baseCardStyle: React.CSSProperties = {
   transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
 };
 
-const gridViewStyle: React.CSSProperties = {
-  padding: '1.5rem',
-};
+const gridViewStyle = (isMobile: boolean): React.CSSProperties => ({
+  padding: isMobile ? '1rem' : '1.5rem',
+});
 
 const listViewStyle: React.CSSProperties = {
   padding: '1rem 1.5rem',

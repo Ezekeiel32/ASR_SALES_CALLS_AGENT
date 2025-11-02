@@ -6,6 +6,7 @@ import MeetingCard from './MeetingCard';
 import DeleteConfirmModal from './DeleteConfirmModal';
 import { PlusIcon, ViewGridIcon, ViewListIcon, UsersIcon, MicIcon, HomeIcon } from './IconComponents';
 import apiClient from '../services/api';
+import { useMobile } from '../hooks/useMobile';
 
 interface DashboardProps {
   meetings: Meeting[];
@@ -79,6 +80,7 @@ const Dashboard: React.FC<DashboardProps> = ({ meetings, onMeetingClick, loading
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteSuccess, setDeleteSuccess] = useState(false);
+  const isMobile = useMobile();
   
   // Example stats
   const totalMeetings = meetings.length;
@@ -160,7 +162,12 @@ const Dashboard: React.FC<DashboardProps> = ({ meetings, onMeetingClick, loading
         variants={containerVariants}
         initial="hidden"
         animate="visible"
-        style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem', marginBottom: '3rem' }}
+        style={{ 
+          display: 'grid', 
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(250px, 1fr))', 
+          gap: '1.5rem', 
+          marginBottom: '3rem' 
+        }}
       >
         <StatsWidget icon={<HomeIcon width={24} height={24}/>} title="סך הכל פגישות" value={totalMeetings.toString()} />
         <StatsWidget icon={<MicIcon width={24} height={24}/>} title="זמן כולל (דקות)" value={totalDuration.toString()} />
@@ -169,8 +176,8 @@ const Dashboard: React.FC<DashboardProps> = ({ meetings, onMeetingClick, loading
       
       {/* Meetings Section */}
       <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-          <h2 style={{ fontSize: '1.75rem', fontWeight: 600, margin: 0 }}>פגישות אחרונות</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+          <h2 style={{ fontSize: isMobile ? '1.5rem' : '1.75rem', fontWeight: 600, margin: 0 }}>פגישות אחרונות</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             {/* View Toggle */}
             <div style={{ display: 'flex', backgroundColor: '#E2E8F0', padding: '0.25rem', borderRadius: '8px' }}>
@@ -203,7 +210,7 @@ const Dashboard: React.FC<DashboardProps> = ({ meetings, onMeetingClick, loading
                     animate="visible"
                     style={{
                     display: 'grid',
-                    gridTemplateColumns: isListView ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))',
+                    gridTemplateColumns: isListView ? '1fr' : isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))',
                     gap: '1.5rem',
                     width: '100%',
                     boxSizing: 'border-box'

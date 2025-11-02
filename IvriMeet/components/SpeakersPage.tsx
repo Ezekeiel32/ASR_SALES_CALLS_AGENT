@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Speaker } from '../types';
 import { SearchIcon, PlusIcon } from './IconComponents';
+import { useMobile } from '../hooks/useMobile';
 
 const SpeakerCard: React.FC<{ speaker: Speaker }> = ({ speaker }) => {
     return (
@@ -44,17 +45,21 @@ const itemVariants = {
 
 
 const SpeakersPage: React.FC<{ speakers: Speaker[] }> = ({ speakers }) => {
+  const isMobile = useMobile();
+  
   return (
     <div style={{ paddingTop: '0' }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-        <h1 style={{ fontSize: '2.25rem', fontWeight: 700, margin: 0 }}>ניהול דוברים</h1>
-        <div style={{ display: 'flex', gap: '1rem' }}>
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-            <SearchIcon style={{ position: 'absolute', right: '1rem', color: '#A0AEC0' }} width={20} height={20} />
-            <input type="text" placeholder="חיפוש דובר..." style={{ padding: '0.6rem 2.75rem 0.6rem 1rem', border: '1px solid #E2E8F0', borderRadius: '8px', width: '250px', backgroundColor: '#fff', fontSize: '0.9rem' }} />
-          </div>
-          <button style={{ display: 'flex', alignItems: 'center', padding: '0.6rem 1.25rem', border: 'none', borderRadius: '8px', backgroundColor: '#14B8A6', color: 'white', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', marginBottom: '2rem', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '1rem' : '0' }}>
+        <h1 style={{ fontSize: isMobile ? '1.75rem' : '2.25rem', fontWeight: 700, margin: 0 }}>ניהול דוברים</h1>
+        <div style={{ display: 'flex', gap: isMobile ? '0.5rem' : '1rem', flexDirection: isMobile ? 'column' : 'row', width: isMobile ? '100%' : 'auto' }}>
+          {!isMobile && (
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <SearchIcon style={{ position: 'absolute', right: '1rem', color: '#A0AEC0' }} width={20} height={20} />
+              <input type="text" placeholder="חיפוש דובר..." style={{ padding: '0.6rem 2.75rem 0.6rem 1rem', border: '1px solid #E2E8F0', borderRadius: '8px', width: '250px', backgroundColor: '#fff', fontSize: '0.9rem' }} />
+            </div>
+          )}
+          <button style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0.6rem 1.25rem', border: 'none', borderRadius: '8px', backgroundColor: '#14B8A6', color: 'white', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600, minHeight: '44px', width: isMobile ? '100%' : 'auto' }}>
             <PlusIcon style={{ marginLeft: '0.5rem' }} width={20} height={20}/>
             <span>הוסף דובר</span>
           </button>
@@ -66,7 +71,7 @@ const SpeakersPage: React.FC<{ speakers: Speaker[] }> = ({ speakers }) => {
         variants={containerVariants}
         initial="hidden"
         animate="visible"
-        style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '1.5rem' }}
+        style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(250px, 1fr))', gap: isMobile ? '1rem' : '1.5rem' }}
       >
         {speakers.map(speaker => (
           <motion.div key={speaker.id} variants={itemVariants}>

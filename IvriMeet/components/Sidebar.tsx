@@ -5,6 +5,9 @@ import { HomeIcon, UsersIcon, MicIcon, SettingsIcon } from './IconComponents';
 interface SidebarProps {
   currentPage: string;
   onNavigate: (page: string) => void;
+  isMobile?: boolean;
+  isOpen?: boolean;
+  onClose?: () => void;
 }
 
 const NavItem = ({ icon, label, page, currentPage, onNavigate }: any) => {
@@ -37,9 +40,13 @@ const NavItem = ({ icon, label, page, currentPage, onNavigate }: any) => {
   );
 };
 
-const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isMobile = false, isOpen = false, onClose }) => {
+  const sidebarStyles = isMobile 
+    ? { ...sidebarStyle, ...mobileSidebarStyle, transform: isOpen ? 'translateX(0)' : 'translateX(100%)' }
+    : sidebarStyle;
+
   return (
-    <aside style={sidebarStyle}>
+    <aside style={sidebarStyles}>
       <div style={overlayStyle}></div>
       <div style={{ ...contentWrapperStyle }}>
       <div style={logoContainerStyle}>
@@ -85,6 +92,13 @@ const sidebarStyle: React.CSSProperties = {
   borderLeft: '1px solid rgba(16, 71, 48, 0.3)', // Subtle darker green border
   zIndex: 100,
   boxSizing: 'border-box',
+  transition: 'transform 0.3s ease-in-out',
+};
+
+const mobileSidebarStyle: React.CSSProperties = {
+  width: '280px',
+  maxWidth: '85vw', // Max 85% of viewport width on very small screens
+  zIndex: 1000, // Above overlay
 };
 
 const overlayStyle: React.CSSProperties = {

@@ -18,3 +18,6 @@ agent_service/agent_out/
 agent_out/
 *.mp3
 *.wav
+
+# Local Netlify folder
+.netlify

@@ -31,6 +31,18 @@ const App: React.FC = () => {
   const [speakers, setSpeakers] = useState<Speaker[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isMobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Detect mobile on mount and resize
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Load meetings from backend
   useEffect(() => {
@@ -65,6 +77,9 @@ const App: React.FC = () => {
   const navigateTo = (page: string) => {
     setCurrentPage(page);
     setSelectedMeeting(null);
+    if (isMobile) {
+      setMobileSidebarOpen(false); // Close sidebar on mobile after navigation
+    }
     if (page === 'speakers') {
       loadSpeakers();
     }
@@ -128,28 +143,60 @@ const App: React.FC = () => {
   };
 
   return (
-    <div dir="rtl" style={{ display: 'flex', height: '100vh', backgroundColor: '#F9FAFB' }}>
-      <Sidebar currentPage={currentPage} onNavigate={navigateTo} />
+    <div dir="rtl" style={{ display: 'flex', height: '100vh', backgroundColor: '#F9FAFB', position: 'relative', overflow: 'hidden' }}>
+      {/* Sidebar - Hidden on mobile, drawer on mobile when open */}
+      <Sidebar 
+        currentPage={currentPage} 
+        onNavigate={navigateTo} 
+        isMobile={isMobile}
+        isOpen={isMobileSidebarOpen}
+        onClose={() => setMobileSidebarOpen(false)}
+      />
+      
+      {/* Mobile Sidebar Overlay */}
+      {isMobile && isMobileSidebarOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={() => setMobileSidebarOpen(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            zIndex: 999,
+          }}
+        />
+      )}
+      
       <main style={{ 
         flex: 1, 
         display: 'flex', 
         flexDirection: 'column', 
         overflow: 'hidden',
-        marginRight: '280px', // Account for sidebar width
-        width: 'calc(100% - 280px)',
+        marginRight: isMobile ? '0' : '280px', // No margin on mobile
+        width: isMobile ? '100%' : 'calc(100% - 280px)',
         boxSizing: 'border-box',
         position: 'relative'
       }}>
-        <Header onNewMeetingClick={() => setUploadModalOpen(true)} />
+        <Header 
+          onNewMeetingClick={() => setUploadModalOpen(true)} 
+          onMenuClick={() => setMobileSidebarOpen(!isMobileSidebarOpen)}
+          isMobile={isMobile}
+        />
         <div style={{ 
-          padding: '1rem 2.5rem 2.5rem 2.5rem', 
+          padding: isMobile ? '1rem' : '1rem 2.5rem 2.5rem 2.5rem', 
           flex: 1,
-          marginTop: '80px', // Account for fixed header
+          marginTop: isMobile ? '70px' : '80px', // Smaller header on mobile
           boxSizing: 'border-box',
           maxWidth: '100%',
           overflowY: 'auto',
           overflowX: 'hidden',
-          minHeight: 0 // Important for flex scrolling
+          minHeight: 0, // Important for flex scrolling
+          WebkitOverflowScrolling: 'touch' // Smooth scrolling on iOS
         }}>
           <AnimatePresence mode="wait">
             <motion.div

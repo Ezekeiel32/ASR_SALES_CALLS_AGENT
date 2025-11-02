@@ -1,0 +1,83 @@
+/* Mobile-First Responsive Styles for IvriMeet */
+
+/* Global Mobile Optimizations */
+* {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Mobile Viewport Fixes */
+@supports (-webkit-touch-callout: none) {
+  /* iOS specific fixes */
+  body {
+    height: -webkit-fill-available;
+  }
+  
+  #root {
+    min-height: -webkit-fill-available;
+  }
+}
+
+/* Responsive Typography */
+@media (max-width: 768px) {
+  h1 {
+    font-size: 1.75rem !important;
+  }
+  
+  h2 {
+    font-size: 1.5rem !important;
+  }
+  
+  h3 {
+    font-size: 1.25rem !important;
+  }
+  
+  p {
+    font-size: 0.95rem !important;
+  }
+}
+
+/* Safe Area Insets for Notched Devices */
+@supports (padding: max(0px)) {
+  body {
+    padding-left: max(0px, env(safe-area-inset-left));
+    padding-right: max(0px, env(safe-area-inset-right));
+    padding-top: max(0px, env(safe-area-inset-top));
+    padding-bottom: max(0px, env(safe-area-inset-bottom));
+  }
+}
+
+/* Touch-Friendly Button Sizes (minimum 44x44px) */
+button, a[role="button"] {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Smooth Scrolling */
+html {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Mobile Optimizations */
+@media (max-width: 768px) {
+  /* Prevent text size adjustment on iOS */
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  
+  /* Better touch targets */
+  input, textarea, select, button {
+    font-size: 16px; /* Prevents iOS zoom on focus */
+  }
+}
+
