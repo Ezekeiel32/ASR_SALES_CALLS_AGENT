@@ -51,7 +51,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose, onSuccess })
     }
   };
 
-  const handleFileUpload = async (file: File) => {
+  const handleFileUpload = async (file: File, retryCount = 0) => {
     // Validate file type
     const allowedTypes = ['audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/aac', 'audio/webm'];
     if (!allowedTypes.includes(file.type)) {
@@ -59,26 +59,40 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose, onSuccess })
       return;
     }
 
+    let progressInterval: NodeJS.Timeout | null = null;
+
     try {
       setUploading(true);
       setUploadProgress(0);
       setUploadError(null);
       setUploadSuccess(false);
 
+      // Check backend health before upload (only on first attempt)
+      if (retryCount === 0) {
+        try {
+          await apiClient.healthCheck();
+        } catch (healthErr) {
+          console.warn('Health check failed, but continuing with upload:', healthErr);
+          // Continue anyway - sometimes health check fails but upload works
+        }
+      }
+
       // Simulate progress for better UX
-      const progressInterval = setInterval(() => {
+      progressInterval = setInterval(() => {
         setUploadProgress(prev => {
           if (prev >= 90) {
-            clearInterval(progressInterval);
-            return prev;
+            return prev; // Don't go above 90% until upload completes
           }
-          return prev + Math.random() * 15;
+          return prev + Math.random() * 10;
         });
-      }, 200);
+      }, 300);
 
       const response = await apiClient.uploadMeeting(file);
       
-      clearInterval(progressInterval);
+      if (progressInterval) {
+        clearInterval(progressInterval);
+        progressInterval = null;
+      }
       setUploadProgress(100);
       
       setUploadSuccess(true);
@@ -89,10 +103,33 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose, onSuccess })
         setUploadProgress(0);
       }, 1500);
     } catch (err) {
+      if (progressInterval) {
+        clearInterval(progressInterval);
+        progressInterval = null;
+      }
+      
       console.error('Upload error:', err);
-      setUploadError(err instanceof Error ? err.message : 'שגיאה בהעלאת הקובץ');
+      const errorMessage = err instanceof Error ? err.message : 'שגיאה בהעלאת הקובץ';
+      
+      // Retry logic for network errors
+      const isNetworkError = errorMessage.includes('Network error') || 
+                            errorMessage.includes('Failed to fetch') ||
+                            errorMessage.includes('ERR_TIMED_OUT') ||
+                            errorMessage.includes('timeout');
+      
+      if (isNetworkError && retryCount < 2) {
+        // Wait 2 seconds before retry
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        setUploadProgress(0);
+        return handleFileUpload(file, retryCount + 1);
+      }
+      
+      setUploadError(errorMessage);
       setUploadProgress(0);
     } finally {
+      if (progressInterval) {
+        clearInterval(progressInterval);
+      }
       setUploading(false);
     }
   };

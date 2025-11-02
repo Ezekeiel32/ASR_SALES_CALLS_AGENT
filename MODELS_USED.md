@@ -63,12 +63,12 @@
 
 ### Before S3 Integration:
 ```
-EC2 Disk:
+Container Disk:
 ├── ~/.cache/huggingface/         (~2-3GB)
 │   ├── pyannote/                 (~500MB-1GB)
 │   └── speechbrain/              (~200MB)
 └── Audio files                   (Variable, can be huge)
-Total: ~6GB+ (fills 8GB disk)
+Total: ~6GB+ (large container size, slow cold starts)
 ```
 
 ### After S3 Integration:
@@ -84,11 +84,11 @@ S3 Bucket:
 │           └── {speaker}_snippet.wav
 └── [Old models moved to Glacier after 90 days]
 
-EC2 Disk:
-├── /tmp/hf_cache/                (~100MB, cleaned on reboot)
+Container Disk (Koyeb):
+├── /tmp/hf_cache/                (~100MB, cleaned on restart)
 ├── Code + dependencies           (~1GB)
-└── Database                      (~500MB)
-Total: ~2GB (safe for 8GB disk)
+└── Temp files                    (~100MB)
+Total: ~1.2GB (small container, faster deployments)
 ```
 
 ---
@@ -105,7 +105,7 @@ Total: ~2GB (safe for 8GB disk)
    Request → Download from S3 → Use locally → Keep in temp cache → Auto-cleanup
    ```
 
-3. **After Reboot**:
+3. **After Container Restart**:
    ```
    Temp cache cleared → Download from S3 again (fast, ~500MB)
    ```
@@ -146,11 +146,12 @@ PYANNOTE_MODEL=pyannote/speaker-diarization-3.1  # Default
 
 ## Why Store in S3?
 
-1. **Disk Space**: 8GB EC2 instance can't hold multiple GB of models
-2. **Cost**: S3 storage is cheaper than larger EC2 instance
-3. **Speed**: Models download from S3 faster than HuggingFace
-4. **Scalability**: Multiple EC2 instances can share same models
-5. **Backup**: Models safe in S3 even if EC2 crashes
+1. **Container Size**: Smaller containers = faster deployments and cold starts on Koyeb
+2. **Cost**: S3 storage is cheaper than larger container storage tiers
+3. **Speed**: Models download from S3 faster than HuggingFace (especially on subsequent runs)
+4. **Scalability**: Multiple Koyeb services can share the same models from S3
+5. **Persistence**: Models safe in S3 even if containers restart or redeploy
+6. **Cold Starts**: Smaller container images mean faster cold start times
 
 ---
 

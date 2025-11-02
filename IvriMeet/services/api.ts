@@ -111,9 +111,38 @@ class ApiClient {
     }
   }
 
-  // Health check
+  // Health check with shorter timeout
   async healthCheck(): Promise<{ status: string }> {
-    return this.request<{ status: string }>('/healthz');
+    const url = `${this.baseUrl}/healthz`;
+    const timeoutDuration = 10 * 1000; // 10 seconds for health check
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
+    
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`Health check failed: ${response.status}`);
+      }
+
+      return response.json();
+    } catch (error) {
+      clearTimeout(timeoutId);
+      
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Health check timeout: Backend may be sleeping or unreachable.');
+      }
+      
+      throw error;
+    }
   }
 
   // Upload meeting audio file with timeout handling

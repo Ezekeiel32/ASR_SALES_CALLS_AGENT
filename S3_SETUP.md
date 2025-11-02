@@ -1,10 +1,10 @@
-# S3 Integration for EC2 - Reduce Disk Usage
+# S3 Integration for Koyeb - Model Storage
 
-## Problem
-EC2 instances have limited disk space (8GB default). Large PyTorch models and HuggingFace cache can fill up the disk quickly.
+## Overview
+Store all large ML models in S3 and download on-demand to reduce container disk usage and improve cold start times.
 
 ## Solution
-Store all large files in S3 and download on-demand.
+Store PyAnnote and SpeechBrain models in S3, download on-demand when needed.
 
 ## What Gets Stored in S3
 
@@ -52,9 +52,9 @@ Create an IAM user with S3 access:
 }
 ```
 
-### 3. Update .env on EC2
+### 3. Configure Environment Variables
 
-Add to `/home/ubuntu/ASR_SALES_CALLS_AGENT/.env`:
+In Koyeb dashboard, add these environment variables:
 
 ```bash
 S3_BUCKET=ivrimeet-models
@@ -63,21 +63,14 @@ AWS_ACCESS_KEY_ID=your_access_key
 AWS_SECRET_ACCESS_KEY=your_secret_key
 ```
 
-### 4. Run Cleanup Script
-
-On EC2, run:
+Or if using `.env` file locally:
 
 ```bash
-cd /home/ubuntu/ASR_SALES_CALLS_AGENT
-./scripts/cleanup_ec2_disk.sh
+S3_BUCKET=ivrimeet-models
+S3_REGION=us-east-1
+AWS_ACCESS_KEY_ID=your_access_key
+AWS_SECRET_ACCESS_KEY=your_secret_key
 ```
-
-This will:
-- Remove pip cache
-- Remove HuggingFace cache
-- Clean apt cache
-- Clean Docker
-- Show disk usage
 
 ## How It Works
 
@@ -90,36 +83,24 @@ This will:
 ### Audio Files
 - All uploaded audio goes directly to S3
 - Snippets are stored in S3
-- Only temporary files stay on EC2 (cleaned up automatically)
+- Only temporary files stay in container (cleaned up automatically)
 
 ### HuggingFace Cache
-- Configured to use `/tmp/hf_cache` (cleaned on reboot)
+- Configured to use temp directory (automatically cleaned)
 - Cache is minimal - only keeps what's actively being used
-- Old cache files are automatically cleaned up
+- Old cache files are automatically cleaned up on container restart
 
-## Disk Space Savings
+## Benefits
 
-Before S3:
-- PyTorch models: ~2-3GB
-- HuggingFace cache: ~1-2GB
-- Audio files: Variable (can be huge)
-- Total: Can easily fill 8GB
+**Storage Efficiency:**
+- Models stored in S3 (persistent, shared across deployments)
+- Minimal local cache (reduces container size)
+- Faster cold starts (smaller container images)
 
-After S3:
-- Code + dependencies: ~1GB
-- Database: ~500MB
-- Temp files: ~100MB
-- Total: ~2GB (safe for 8GB instance)
-
-## Monitoring Disk Usage
-
-```bash
-# Check disk usage
-df -h /
-
-# Check what's using space
-du -sh /home/ubuntu/ASR_SALES_CALLS_AGENT/*
-```
+**Cost Savings:**
+- S3 storage is cheaper than larger container storage
+- Models can be shared across multiple deployments
+- Automatic cleanup of temporary files
 
 ## Troubleshooting
 
@@ -129,9 +110,9 @@ du -sh /home/ubuntu/ASR_SALES_CALLS_AGENT/*
 - Check logs for S3 errors
 
 ### Disk Still Filling Up
-- Run cleanup script: `./scripts/cleanup_ec2_disk.sh`
-- Check for temp files: `find /tmp -type f -size +100M`
-- Verify S3 uploads are working
+- Check Koyeb container logs for disk usage warnings
+- Verify S3 uploads are working (check logs)
+- Models should auto-cleanup after use
 
 ### Models Downloading Every Time
 - This is expected on first run for each model
