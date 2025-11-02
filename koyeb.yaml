@@ -23,7 +23,7 @@ services:
     env:
       - name: PYTHONUNBUFFERED
         value: "1"
-    command: celery -A agent_service.services.processing_queue.celery_app worker --loglevel=info --concurrency=2 --uid=nobody --gid=nogroup
+    command: celery -A agent_service.services.processing_queue.celery_app worker --loglevel=info --concurrency=2
     scaling:
       min: 1
       max: 2

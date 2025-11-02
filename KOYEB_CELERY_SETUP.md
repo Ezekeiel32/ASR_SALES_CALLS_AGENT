@@ -56,12 +56,21 @@ If you redeploy from GitHub, Koyeb should detect both services:
 
 ## 🔍 Verify Worker is Running
 
-1. **Check Logs:**
+1. **Check Service Status:**
+   - Dashboard → Worker Service → Status should be **"Running"** (green)
+   - If status is "Stopped", click **"Start"** or **"Restart"**
+
+2. **Check Logs:**
    - Go to worker service → "Logs"
    - You should see:
      ```
      celery@... ready.
      ```
+   
+   **⚠️ If you see "instance with status STOPPED":**
+   - The service is stopped and needs to be started
+   - Go to service → Click "Start" or "Restart"
+   - See `KOYEB_WORKER_START.md` for detailed instructions
 
 2. **Test Processing:**
    - Upload a meeting file
