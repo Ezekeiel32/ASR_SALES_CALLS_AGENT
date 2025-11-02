@@ -97,6 +97,166 @@ async def healthz() -> dict[str, str]:
 	return {"status": "ok"}
 
 
+# ---- Authentication Endpoints ----
+
+class RegisterRequest(BaseModel):
+	email: str
+	password: str
+	name: str | None = None
+	organization_name: str | None = None
+
+
+class LoginRequest(BaseModel):
+	email: str
+	password: str
+
+
+class TokenResponse(BaseModel):
+	access_token: str
+	token_type: str = "bearer"
+	user_id: str
+	organization_id: str
+	email: str
+	name: str | None
+
+
+@app.post("/auth/register", response_model=TokenResponse)
+async def register(
+	request: RegisterRequest,
+	db: Session = Depends(get_db),
+) -> TokenResponse:
+	"""
+	Register a new user account.
+	Creates a new organization if organization_name is provided,
+	otherwise assigns to default organization.
+	"""
+	# Check if user already exists
+	existing_user = db.query(User).filter(User.email == request.email).first()
+	if existing_user:
+		raise HTTPException(status_code=400, detail="Email already registered")
+	
+	# Get or create organization
+	if request.organization_name:
+		# Create new organization
+		org = Organization(
+			name=request.organization_name,
+			subscription_plan="free",
+		)
+		db.add(org)
+		db.flush()  # Get org ID
+	else:
+		# Use default organization
+		org = get_or_create_default_organization(db)
+	
+	# Create user
+	user = User(
+		organization_id=org.id,
+		email=request.email,
+		name=request.name,
+		password_hash=get_password_hash(request.password),
+	)
+	db.add(user)
+	db.commit()
+	db.refresh(user)
+	
+	# Create access token
+	access_token = create_access_token(
+		data={"sub": str(user.id), "org_id": str(org.id), "email": user.email}
+	)
+	
+	return TokenResponse(
+		access_token=access_token,
+		token_type="bearer",
+		user_id=str(user.id),
+		organization_id=str(org.id),
+		email=user.email,
+		name=user.name,
+	)
+
+
+@app.post("/auth/login", response_model=TokenResponse)
+async def login(
+	request: LoginRequest,
+	db: Session = Depends(get_db),
+) -> TokenResponse:
+	"""
+	Login with email and password.
+	Returns JWT access token.
+	"""
+	# Find user by email
+	user = db.query(User).filter(User.email == request.email).first()
+	if not user:
+		raise HTTPException(status_code=401, detail="Invalid email or password")
+	
+	# Verify password
+	if not user.password_hash or not verify_password(request.password, user.password_hash):
+		raise HTTPException(status_code=401, detail="Invalid email or password")
+	
+	# Get organization
+	org = db.get(Organization, user.organization_id)
+	if not org:
+		raise HTTPException(status_code=500, detail="User organization not found")
+	
+	# Create access token
+	access_token = create_access_token(
+		data={"sub": str(user.id), "org_id": str(org.id), "email": user.email}
+	)
+	
+	return TokenResponse(
+		access_token=access_token,
+		token_type="bearer",
+		user_id=str(user.id),
+		organization_id=str(org.id),
+		email=user.email,
+		name=user.name,
+	)
+
+
+@app.get("/auth/me")
+async def get_current_user(
+	authorization: str | None = None,
+	db: Session = Depends(get_db),
+) -> TokenResponse:
+	"""
+	Get current authenticated user info from JWT token.
+	"""
+	from fastapi import Header
+	
+	if not authorization:
+		raise HTTPException(status_code=401, detail="Not authenticated")
+	
+	if not authorization.startswith("Bearer "):
+		raise HTTPException(status_code=401, detail="Invalid authorization header")
+	
+	token = authorization.replace("Bearer ", "")
+	payload = decode_access_token(token)
+	
+	if not payload:
+		raise HTTPException(status_code=401, detail="Invalid token")
+	
+	user_id = payload.get("sub")
+	if not user_id:
+		raise HTTPException(status_code=401, detail="Invalid token")
+	
+	# Get user from database
+	user = db.get(User, uuid.UUID(user_id))
+	if not user:
+		raise HTTPException(status_code=401, detail="User not found")
+	
+	org = db.get(Organization, user.organization_id)
+	if not org:
+		raise HTTPException(status_code=500, detail="Organization not found")
+	
+	return TokenResponse(
+		access_token=token,  # Return same token
+		token_type="bearer",
+		user_id=str(user.id),
+		organization_id=str(org.id),
+		email=user.email,
+		name=user.name,
+	)
+
+
 # ---- Power Automate friendly endpoints ----
 
 
@@ -296,10 +456,14 @@ async def upload_meeting(
 				status_code=400, detail=f"Invalid organization_id format: {organization_id}. Expected UUID format."
 			)
 
-		# Verify organization exists
+		# Verify organization exists, or create default if using default ID
 		org = db.get(Organization, org_id)
 		if not org:
-			raise HTTPException(status_code=404, detail=f"Organization {organization_id} not found")
+			# If using default organization ID, create it
+			if str(org_id) == "00000000-0000-0000-0000-000000000001":
+				org = get_or_create_default_organization(db)
+			else:
+				raise HTTPException(status_code=404, detail=f"Organization {organization_id} not found")
 
 		# Save audio to S3 or local storage
 		audio_s3_key = None
