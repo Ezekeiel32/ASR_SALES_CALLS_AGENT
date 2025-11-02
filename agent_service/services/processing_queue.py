@@ -22,9 +22,17 @@ settings = get_settings()
 # Get Redis URL from environment (Railway/Koyeb provides REDIS_URL automatically)
 redis_url = settings.redis_url or os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
+# Validate Redis URL exists
+if not redis_url or redis_url == "redis://localhost:6379/0":
+	logger.warning("REDIS_URL not set or using default. Worker may not connect to Redis.")
+
 # Parse Redis URL to determine if SSL is needed
-redis_parsed = urlparse(redis_url)
-is_ssl = redis_parsed.scheme == "rediss" or redis_url.startswith("rediss://")
+try:
+	redis_parsed = urlparse(redis_url)
+	is_ssl = redis_parsed.scheme == "rediss" or redis_url.startswith("rediss://")
+except Exception as e:
+	logger.error(f"Failed to parse Redis URL: {e}")
+	is_ssl = False
 
 # For secure Redis (rediss://), we need to configure SSL properly
 # Upstash and other Redis services use TLS but don't require client certificates
@@ -35,12 +43,17 @@ if is_ssl:
 		separator = "&" if "?" in redis_url else "?"
 		redis_url = f"{redis_url}{separator}ssl_cert_reqs=CERT_NONE"
 
-# Initialize Celery app
-celery_app = Celery(
-	"hebrew_meetings",
-	broker=redis_url,
-	backend=redis_url,
-)
+# Initialize Celery app with error handling
+try:
+	celery_app = Celery(
+		"hebrew_meetings",
+		broker=redis_url,
+		backend=redis_url,
+	)
+	logger.info(f"Celery app initialized with Redis broker: {redis_url[:50]}...")
+except Exception as e:
+	logger.error(f"Failed to initialize Celery app: {e}")
+	raise
 
 # Configure Celery with SSL settings for Redis if needed
 celery_conf = {
