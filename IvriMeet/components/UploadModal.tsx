@@ -14,6 +14,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose, onSuccess })
   const [activeTab, setActiveTab] = useState('upload');
   const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const isMobile = useMobile();
@@ -60,20 +61,37 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose, onSuccess })
 
     try {
       setUploading(true);
+      setUploadProgress(0);
       setUploadError(null);
       setUploadSuccess(false);
 
+      // Simulate progress for better UX
+      const progressInterval = setInterval(() => {
+        setUploadProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval);
+            return prev;
+          }
+          return prev + Math.random() * 15;
+        });
+      }, 200);
+
       const response = await apiClient.uploadMeeting(file);
+      
+      clearInterval(progressInterval);
+      setUploadProgress(100);
       
       setUploadSuccess(true);
       setTimeout(() => {
         onSuccess?.();
         onClose();
         setUploadSuccess(false);
+        setUploadProgress(0);
       }, 1500);
     } catch (err) {
       console.error('Upload error:', err);
       setUploadError(err instanceof Error ? err.message : 'שגיאה בהעלאת הקובץ');
+      setUploadProgress(0);
     } finally {
       setUploading(false);
     }
@@ -117,7 +135,14 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose, onSuccess })
                 onDragLeave={handleDragLeave}
                 onDragOver={handleDragOver}
                 onDrop={handleDrop}
-                style={{ ...dropzoneStyle, ...(isDragging ? dropzoneDraggingStyle : {}) }}
+                className={isDragging || uploading ? 'upload-dropzone-animated' : ''}
+                style={{ 
+                  ...dropzoneStyle, 
+                  ...(isDragging ? dropzoneDraggingStyle : {}),
+                  ...(uploading ? uploadingDropzoneStyle : {}),
+                  position: 'relative',
+                  overflow: 'visible'
+                }}
               >
                 <UploadCloudIcon width="48" height="48" style={{ color: '#14B8A6', marginBottom: '1rem' }} />
                 <p style={{ fontWeight: 600, color: '#1A202C' }}>גרור ושחרר קבצים לכאן</p>
@@ -135,10 +160,30 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose, onSuccess })
                   onChange={handleFileSelect}
                   disabled={uploading}
                 />
-                <p style={{ color: '#A0AEC0', fontSize: '0.8rem', marginTop: '2rem' }}>פורמטים נתמכים: MP3, WAV, M4A, AAC, WebM</p>
-                {uploading && <p style={{ color: '#14B8A6', marginTop: '1rem' }}>מעלה ומעבד...</p>}
-                {uploadError && <p style={{ color: '#EF4444', marginTop: '1rem' }}>{uploadError}</p>}
-                {uploadSuccess && <p style={{ color: '#10B981', marginTop: '1rem' }}>✓ הפגישה הועלתה בהצלחה!</p>}
+                
+                {/* Progress Bar */}
+                {uploading && (
+                  <div style={{ marginTop: '1.5rem', width: '100%' }}>
+                    <div style={progressBarContainerStyle}>
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${uploadProgress}%` }}
+                        transition={{ duration: 0.3, ease: 'easeOut' }}
+                        style={progressBarStyle}
+                      />
+                    </div>
+                    <p style={{ color: '#14B8A6', marginTop: '0.5rem', fontSize: '0.85rem', fontWeight: 500 }}>
+                      מעלה ומעבד... {Math.round(uploadProgress)}%
+                    </p>
+                  </div>
+                )}
+                
+                {!uploading && (
+                  <p style={{ color: '#A0AEC0', fontSize: '0.8rem', marginTop: '2rem' }}>פורמטים נתמכים: MP3, WAV, M4A, AAC, WebM</p>
+                )}
+                
+                {uploadError && !uploading && <p style={{ color: '#EF4444', marginTop: '1rem' }}>{uploadError}</p>}
+                {uploadSuccess && !uploading && <p style={{ color: '#10B981', marginTop: '1rem' }}>✓ הפגישה הועלתה בהצלחה!</p>}
               </div>
             )}
             {activeTab === 'live' && (
@@ -193,10 +238,38 @@ const dropzoneStyle: React.CSSProperties = {
     textAlign: 'center',
     cursor: 'pointer',
     transition: 'border-color 0.2s, background-color 0.2s',
+    position: 'relative',
 };
+
 const dropzoneDraggingStyle: React.CSSProperties = {
-    borderColor: '#14B8A6',  // Only change borderColor, keep other border properties from dropzoneStyle
-    backgroundColor: '#F0FDFA'
+    borderColor: '#14B8A6',
+    backgroundColor: '#F0FDFA',
+    animation: 'borderPulse 2s ease-in-out infinite',
+};
+
+const uploadingDropzoneStyle: React.CSSProperties = {
+    borderColor: '#14B8A6',
+    backgroundColor: '#F0FDFA',
+    animation: 'borderPulse 2s ease-in-out infinite',
+};
+
+const progressBarContainerStyle: React.CSSProperties = {
+    width: '100%',
+    height: '6px',
+    backgroundColor: '#E5E7EB',
+    borderRadius: '9999px',
+    overflow: 'hidden',
+    position: 'relative',
+};
+
+const progressBarStyle: React.CSSProperties = {
+    height: '100%',
+    backgroundColor: '#14B8A6',
+    borderRadius: '9999px',
+    backgroundImage: 'linear-gradient(90deg, #14B8A6, #0D9488, #14B8A6)',
+    backgroundSize: '200% 100%',
+    animation: 'shimmer 2s ease-in-out infinite',
+    boxShadow: '0 2px 8px rgba(20, 184, 166, 0.4)',
 };
 const primaryButtonStyle: React.CSSProperties = {
     width: '100%', padding: '0.75rem', border: 'none', borderRadius: '8px',

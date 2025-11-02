@@ -81,3 +81,76 @@ html {
   }
 }
 
+/* Upload Modal Animations */
+@keyframes borderPulse {
+  0%, 100% {
+    border-color: #14B8A6;
+    box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.4);
+  }
+  50% {
+    border-color: #0D9488;
+    box-shadow: 0 0 0 8px rgba(20, 184, 166, 0);
+  }
+}
+
+@keyframes borderFlow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes progressBar {
+  0% {
+    width: 0%;
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    width: 100%;
+    opacity: 0.8;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+.upload-dropzone-animated {
+  position: relative;
+  overflow: hidden;
+}
+
+.upload-dropzone-animated::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(20, 184, 166, 0.4),
+    rgba(20, 184, 166, 0.6),
+    rgba(20, 184, 166, 0.4),
+    transparent
+  );
+  background-size: 200% 100%;
+  border-radius: 10px;
+  animation: borderFlow 3s ease-in-out infinite;
+  z-index: -1;
+}
+
