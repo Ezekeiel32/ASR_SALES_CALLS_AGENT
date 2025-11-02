@@ -54,8 +54,20 @@ const App: React.FC = () => {
     };
     window.addEventListener('openUploadModal', handleOpenModal);
     
+    // Keepalive ping to prevent backend deep sleep (every 4 minutes, before 5 min timeout)
+    // This ensures backend stays awake even if scaling.min isn't respected
+    const keepaliveInterval = setInterval(async () => {
+      try {
+        await apiClient.healthCheck();
+      } catch (e) {
+        // Silently ignore errors - just keeping the instance alive
+        console.debug('Keepalive ping failed (backend may be sleeping):', e);
+      }
+    }, 4 * 60 * 1000); // Every 4 minutes (before 5 min deep sleep threshold)
+    
     return () => {
       window.removeEventListener('openUploadModal', handleOpenModal);
+      clearInterval(keepaliveInterval);
     };
   }, []);
 

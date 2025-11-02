@@ -14,7 +14,7 @@ services:
       interval: 30
       timeout: 10
     scaling:
-      min: 1
+      min: 1  # Keep at least 1 instance always running (prevents deep sleep)
       max: 3
 
   - name: worker
