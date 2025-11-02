@@ -33,6 +33,7 @@ app = FastAPI(title="Hebrew Medical Sales Call Agent", version="0.1.0")
 def get_cors_origins() -> list[str]:
 	"""Get CORS origins from settings or use defaults."""
 	settings = get_settings()
+	logger = logging.getLogger(__name__)
 	
 	# Default development origins
 	default_origins = [
@@ -50,10 +51,12 @@ def get_cors_origins() -> list[str]:
 	# If CORS_ORIGINS is set in environment, use it (comma-separated)
 	if settings.cors_origins:
 		custom_origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
-		return list(set(default_origins + production_origins + custom_origins))
+		all_origins = list(set(default_origins + production_origins + custom_origins))
+	else:
+		all_origins = default_origins + production_origins
 	
-	# Otherwise use defaults + production
-	return default_origins + production_origins
+	logger.info(f"CORS allowed origins: {all_origins}")
+	return all_origins
 
 app.add_middleware(
     CORSMiddleware,
