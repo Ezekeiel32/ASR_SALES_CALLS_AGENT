@@ -59,8 +59,6 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose, onSuccess })
       return;
     }
 
-    let progressInterval: NodeJS.Timeout | null = null;
-
     try {
       setUploading(true);
       setUploadProgress(0);
@@ -77,22 +75,17 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose, onSuccess })
         }
       }
 
-      // Simulate progress for better UX
-      progressInterval = setInterval(() => {
-        setUploadProgress(prev => {
-          if (prev >= 90) {
-            return prev; // Don't go above 90% until upload completes
-          }
-          return prev + Math.random() * 10;
-        });
-      }, 300);
-
-      const response = await apiClient.uploadMeeting(file);
+      // Upload with real-time progress tracking
+      const response = await apiClient.uploadMeeting(
+        file,
+        undefined, // title
+        undefined, // organizationId
+        (progress) => {
+          // Update progress from real upload events
+          setUploadProgress(progress);
+        }
+      );
       
-      if (progressInterval) {
-        clearInterval(progressInterval);
-        progressInterval = null;
-      }
       setUploadProgress(100);
       
       setUploadSuccess(true);
@@ -103,11 +96,6 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose, onSuccess })
         setUploadProgress(0);
       }, 1500);
     } catch (err) {
-      if (progressInterval) {
-        clearInterval(progressInterval);
-        progressInterval = null;
-      }
-      
       console.error('Upload error:', err);
       const errorMessage = err instanceof Error ? err.message : 'שגיאה בהעלאת הקובץ';
       
@@ -115,7 +103,8 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose, onSuccess })
       const isNetworkError = errorMessage.includes('Network error') || 
                             errorMessage.includes('Failed to fetch') ||
                             errorMessage.includes('ERR_TIMED_OUT') ||
-                            errorMessage.includes('timeout');
+                            errorMessage.includes('timeout') ||
+                            errorMessage.includes('CORS');
       
       if (isNetworkError && retryCount < 2) {
         // Wait 2 seconds before retry
@@ -127,9 +116,6 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose, onSuccess })
       setUploadError(errorMessage);
       setUploadProgress(0);
     } finally {
-      if (progressInterval) {
-        clearInterval(progressInterval);
-      }
       setUploading(false);
     }
   };

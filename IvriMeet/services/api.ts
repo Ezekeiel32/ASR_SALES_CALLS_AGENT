@@ -145,8 +145,13 @@ class ApiClient {
     }
   }
 
-  // Upload meeting audio file with timeout handling
-  async uploadMeeting(file: File, title?: string, organizationId?: string): Promise<UploadMeetingResponse> {
+  // Upload meeting audio file with real-time progress tracking
+  async uploadMeeting(
+    file: File, 
+    title?: string, 
+    organizationId?: string,
+    onProgress?: (progress: number) => void
+  ): Promise<UploadMeetingResponse> {
     const formData = new FormData();
     formData.append('file', file);
     if (title) {
@@ -157,48 +162,61 @@ class ApiClient {
     const orgId = organizationId || '00000000-0000-0000-0000-000000000001';
     formData.append('organization_id', orgId);
 
-    // Create AbortController for timeout (10 minutes for large audio files)
-    const timeoutDuration = 10 * 60 * 1000; // 10 minutes
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
-
-    try {
-      const response = await fetch(`${this.baseUrl}/meetings/upload`, {
-        method: 'POST',
-        body: formData,
-        // Don't set Content-Type header - browser will set it automatically with boundary for FormData
-        credentials: 'include',
-        signal: controller.signal,
+    // Use XMLHttpRequest for real upload progress tracking
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      
+      // Track upload progress
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable && onProgress) {
+          const progress = Math.round((e.loaded / e.total) * 100);
+          onProgress(progress);
+        }
       });
 
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        let errorText = 'Unknown error';
-        try {
-          errorText = await response.text();
-        } catch {
-          errorText = `HTTP ${response.status} ${response.statusText}`;
+      // Handle completion
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const response = JSON.parse(xhr.responseText);
+            resolve(response);
+          } catch (e) {
+            reject(new Error('Invalid JSON response from server'));
+          }
+        } else {
+          let errorText = 'Unknown error';
+          try {
+            errorText = xhr.responseText || xhr.statusText;
+          } catch {
+            errorText = `HTTP ${xhr.status} ${xhr.statusText}`;
+          }
+          reject(new Error(`Upload failed: ${xhr.status} - ${errorText}`));
         }
-        throw new Error(`Upload failed: ${response.status} - ${errorText}`);
-      }
+      });
 
-      return response.json();
-    } catch (error) {
-      clearTimeout(timeoutId);
+      // Handle errors
+      xhr.addEventListener('error', () => {
+        reject(new Error('Network error: Could not connect to server. Please check if the backend is running and accessible.'));
+      });
+
+      xhr.addEventListener('abort', () => {
+        reject(new Error('Upload was cancelled'));
+      });
+
+      xhr.addEventListener('timeout', () => {
+        reject(new Error('Upload timeout: The request took too long. Please try again or check your connection.'));
+      });
+
+      // Set timeout (10 minutes for large audio files)
+      xhr.timeout = 10 * 60 * 1000;
+
+      // Open and send request
+      xhr.open('POST', `${this.baseUrl}/meetings/upload`);
+      xhr.withCredentials = true; // Include credentials for CORS
       
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw new Error('Upload timeout: The request took too long. Please try again or check your connection.');
-      }
-      
-      if (error instanceof TypeError) {
-        if (error.message.includes('Failed to fetch') || error.message.includes('ERR_TIMED_OUT')) {
-          throw new Error('Network error: Could not connect to server. Please check if the backend is running and accessible.');
-        }
-      }
-      
-      throw error;
-    }
+      // Don't set Content-Type header - browser will set it automatically with boundary for FormData
+      xhr.send(formData);
+    });
   }
 
   // List meetings
