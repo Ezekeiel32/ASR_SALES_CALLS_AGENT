@@ -802,11 +802,12 @@ async def get_meeting_summary(
 @app.delete("/meetings/{meeting_id}")
 async def delete_meeting(
 	meeting_id: str,
-	organization_id: str | None = None,
+	current_user: User = Depends(get_current_user),
 	db: Session = Depends(get_db),
 ) -> JSONResponse:
 	"""
 	Delete a meeting and all associated data.
+	Requires authentication.
 	
 	Deletes:
 	- Meeting record (cascades to transcription_segments, meeting_summaries, name_suggestions)
@@ -815,7 +816,6 @@ async def delete_meeting(
 	
 	Args:
 		meeting_id: Meeting UUID to delete
-		organization_id: Optional organization ID for validation (required in production)
 	
 	Returns:
 		Success response with deleted meeting details
