@@ -21,11 +21,15 @@ class AgentService:
 
 	async def process_audio_bytes(self, data: bytes, filename: str = "audio.wav") -> tuple[TranscriptionResult, SummaryResult]:
 		transcription = await self.ivrit.transcribe_bytes(data=data, filename=filename)
-		summary = await self.summarizer.summarize(transcription.text)
+		summary = await self.summarizer.summarize(
+			transcription.text, speaker_segments=transcription.speaker_segments
+		)
 		return transcription, summary
 
 	async def process_audio_file(self, path: str) -> tuple[TranscriptionResult, SummaryResult]:
 		transcription = await self.ivrit.transcribe_file(path)
-		summary = await self.summarizer.summarize(transcription.text)
+		summary = await self.summarizer.summarize(
+			transcription.text, speaker_segments=transcription.speaker_segments
+		)
 		return transcription, summary
 

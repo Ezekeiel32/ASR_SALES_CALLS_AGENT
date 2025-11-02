@@ -41,6 +41,27 @@ class Settings(BaseSettings):
 	nvidia_enable_thinking: bool = Field(default=True)
 	nvidia_stream: bool = Field(default=False)
 
+	# Database
+	database_url: str = Field(
+		default="postgresql://postgres:postgres@localhost:5432/hebrew_meetings"
+	)
+
+	# Storage (S3)
+	s3_bucket: str | None = None
+	s3_region: str = Field(default="us-east-1")
+	aws_access_key_id: str | None = None
+	aws_secret_access_key: str | None = None
+
+	# PyAnnote
+	pyannote_model: str = Field(default="pyannote/speaker-diarization-3.1")
+	pyannote_auth_token: str | None = None
+
+	# CORS
+	cors_origins: str | None = Field(
+		default=None,
+		description="Comma-separated list of allowed CORS origins. Defaults to localhost origins + production domain."
+	)
+
 	# App
 	request_timeout_seconds: float = Field(default=120)
 	log_level: str = Field(default="INFO")
@@ -57,4 +78,6 @@ class TranscriptionResult(BaseModel):
 	text: str
 	raw: dict[str, Any] | None = None
 	segments: list[dict[str, Any]] | None = None
+	speaker_labels: list[str] | None = None  # Unique speaker labels found (e.g., ['SPK_1', 'SPK_2'])
+	speaker_segments: list[dict[str, Any]] | None = None  # Segments grouped by speaker
 

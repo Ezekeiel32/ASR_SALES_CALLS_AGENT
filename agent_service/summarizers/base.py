@@ -13,7 +13,9 @@ class SummaryResult:
 
 class Summarizer(ABC):
 	@abstractmethod
-	async def summarize(self, transcript: str) -> SummaryResult:  # pragma: no cover - interface
+	async def summarize(
+		self, transcript: str, speaker_segments: list[dict[str, Any]] | None = None
+	) -> SummaryResult:  # pragma: no cover - interface
 		...
 
 

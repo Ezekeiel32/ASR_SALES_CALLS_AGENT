@@ -9,15 +9,57 @@ from datetime import datetime, timezone
 from typing import Any
 
 import httpx
-from fastapi import Body, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from agent_service.config import get_settings
+from agent_service.database import get_db
+from agent_service.database.models import Meeting, Organization, Speaker
 from agent_service.service import AgentService
+from agent_service.services import NameSuggestionService, SpeakerService
+from agent_service.services.processing_queue import enqueue_meeting_processing, get_processing_status
 
 
 app = FastAPI(title="Hebrew Medical Sales Call Agent", version="0.1.0")
+
+# Configure CORS
+def get_cors_origins() -> list[str]:
+	"""Get CORS origins from settings or use defaults."""
+	settings = get_settings()
+	
+	# Default development origins
+	default_origins = [
+		"http://localhost:3000",
+		"http://localhost:5173",
+		"http://127.0.0.1:3000",
+		"http://127.0.0.1:5173",
+	]
+	
+	# Add production Netlify domain
+	production_origins = [
+		"https://ivreetmeet.netlify.app",
+	]
+	
+	# If CORS_ORIGINS is set in environment, use it (comma-separated)
+	if settings.cors_origins:
+		custom_origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
+		return list(set(default_origins + production_origins + custom_origins))
+	
+	# Otherwise use defaults + production
+	return default_origins + production_origins
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=get_cors_origins(),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"],
+)
+
 settings = get_settings()
 service = AgentService(settings)
 
@@ -156,6 +198,18 @@ class AnalyzeRequest(BaseModel):
 	transcriptFile: str | None = None
 	persona: str | None = None
 	length: str | None = None
+	speaker_segments: list[dict[str, Any]] | None = None
+
+
+class MeetingUploadRequest(BaseModel):
+	title: str
+	organization_id: str
+	audio_s3_key: str | None = None
+
+
+class SpeakerAssignmentRequest(BaseModel):
+	speaker_label: str
+	speaker_name: str
 
 
 def _extract_keypoints(markdown_text: str) -> list[str]:
@@ -168,7 +222,15 @@ def _extract_keypoints(markdown_text: str) -> list[str]:
 
 @app.post("/analyze")
 async def analyze(req: AnalyzeRequest) -> JSONResponse:
-	result = await service.summarizer.summarize(req.transcript)
+	# Parse speaker_segments if provided in the request
+	speaker_segments: list[dict[str, Any]] | None = None
+	if hasattr(req, "speaker_segments") and req.speaker_segments:
+		speaker_segments = req.speaker_segments
+	elif isinstance(req.transcript, dict) and "speaker_segments" in req.transcript:
+		# Support legacy format where transcript might be a dict with segments
+		speaker_segments = req.transcript.get("speaker_segments")
+
+	result = await service.summarizer.summarize(req.transcript, speaker_segments=speaker_segments)
 	markdown = result.text
 	key_points = _extract_keypoints(markdown)
 	run_id = f"nvidia-{uuid.uuid4()}"
@@ -184,6 +246,544 @@ async def analyze(req: AnalyzeRequest) -> JSONResponse:
 		"confidence": None,
 		"runId": run_id,
 		"createdAt": datetime.now(timezone.utc).isoformat(),
+		"speakerAware": speaker_segments is not None,
 	}
 	return JSONResponse({"summary_markdown": markdown, "analysis": analysis})
+
+
+# ---- New Meeting & Speaker Endpoints ----
+
+
+@app.post("/meetings/upload")
+async def upload_meeting(
+	file: UploadFile = File(...),
+	title: str = Form(""),
+	organization_id: str = Form(...),
+	db: Session = Depends(get_db),
+) -> JSONResponse:
+	"""
+	Upload a new audio file for processing.
+	Creates a meeting record and triggers async processing.
+	"""
+	import boto3
+	from agent_service.config import get_settings
+	from agent_service.services.orchestrator import ProcessingOrchestrator
+	import logging
+
+	logger = logging.getLogger(__name__)
+
+	try:
+		settings = get_settings()
+		try:
+			org_id = uuid.UUID(organization_id)
+		except ValueError:
+			raise HTTPException(
+				status_code=400, detail=f"Invalid organization_id format: {organization_id}. Expected UUID format."
+			)
+
+		# Verify organization exists
+		org = db.get(Organization, org_id)
+		if not org:
+			raise HTTPException(status_code=404, detail=f"Organization {organization_id} not found")
+
+		# Save audio to S3 or local storage
+		audio_s3_key = None
+		audio_bytes = None
+		import os
+
+		if file:
+			logger.info(f"Reading uploaded file: {file.filename}, size: {file.size if hasattr(file, 'size') else 'unknown'}")
+			audio_bytes = await file.read()
+			logger.info(f"Read {len(audio_bytes)/(1024*1024):.1f}MB from uploaded file")
+			
+			# Upload to S3 if configured
+			if settings.s3_bucket:
+				logger.info(f"Uploading to S3 bucket: {settings.s3_bucket}")
+				s3_client = boto3.client(
+					"s3",
+					region_name=settings.s3_region,
+					aws_access_key_id=settings.aws_access_key_id,
+					aws_secret_access_key=settings.aws_secret_access_key,
+				)
+				audio_s3_key = f"meetings/{org_id}/{uuid.uuid4()}/{file.filename or 'audio.wav'}"
+				s3_client.put_object(
+					Bucket=settings.s3_bucket,
+					Key=audio_s3_key,
+					Body=audio_bytes,
+					ContentType=file.content_type or "audio/wav",
+				)
+				logger.info(f"Successfully uploaded to S3: {audio_s3_key}")
+			else:
+				# Save to local storage when S3 is not configured
+				uploads_dir = "./uploads/meetings"
+				os.makedirs(uploads_dir, exist_ok=True)
+				# Create a temporary meeting ID first to save the file
+				temp_meeting_id = uuid.uuid4()
+				local_path = f"{uploads_dir}/{temp_meeting_id}_{file.filename or 'audio.wav'}"
+				with open(local_path, "wb") as f:
+					f.write(audio_bytes)
+				# Store absolute path to avoid working directory issues
+				audio_s3_key = os.path.abspath(local_path)
+				logger.info(f"Saved to local storage: {audio_s3_key}")
+		else:
+			raise HTTPException(status_code=400, detail="File upload required")
+
+		# Create meeting record
+		# Use filename as default title if no title provided
+		meeting_title = title.strip() if title and title.strip() else (file.filename or "New Meeting")
+		# Remove file extension for cleaner title
+		if meeting_title.endswith(('.mp3', '.wav', '.m4a', '.aac', '.webm')):
+			meeting_title = meeting_title.rsplit('.', 1)[0]
+		
+		meeting = Meeting(
+			organization_id=org_id,
+			title=meeting_title,
+			audio_s3_key=audio_s3_key or "pending",
+			status="pending",
+		)
+		db.add(meeting)
+		db.commit()
+
+		# Update the local path with the actual meeting ID if using local storage
+		if not settings.s3_bucket and audio_s3_key:
+			# Rename file to use actual meeting ID
+			old_path = audio_s3_key
+			new_path = os.path.abspath(f"{uploads_dir}/{meeting.id}_{file.filename or 'audio.wav'}")
+			if old_path != new_path:
+				os.rename(old_path, new_path)
+			audio_s3_key = new_path
+			meeting.audio_s3_key = new_path
+			db.commit()
+
+		# Trigger async processing
+		task_id = enqueue_meeting_processing(
+			meeting_id=meeting.id,
+			organization_id=org_id,
+			audio_s3_key=audio_s3_key,
+		)
+
+		logger.info(f"Meeting {meeting.id} uploaded successfully, task {task_id} enqueued")
+
+		return JSONResponse(
+			{
+				"meeting_id": str(meeting.id),
+				"status": "pending",
+				"processing_task_id": task_id,
+				"message": "Meeting uploaded and processing started",
+			}
+		)
+	except HTTPException:
+		# Re-raise HTTP exceptions (they already have proper status codes)
+		raise
+	except Exception as e:
+		logger.error(f"Error uploading meeting: {e}", exc_info=True)
+		raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.get("/meetings")
+async def list_meetings(
+	organization_id: str | None = None,
+	status: str | None = None,
+	limit: int = 50,
+	offset: int = 0,
+	db: Session = Depends(get_db),
+) -> JSONResponse:
+	"""List meetings, optionally filtered by organization and status."""
+	query = db.query(Meeting)
+	
+	if organization_id:
+		try:
+			org_uuid = uuid.UUID(organization_id)
+			query = query.filter(Meeting.organization_id == org_uuid)
+		except ValueError:
+			raise HTTPException(status_code=400, detail=f"Invalid organization_id: {organization_id}")
+	
+	if status:
+		query = query.filter(Meeting.status == status)
+	
+	meetings = query.order_by(Meeting.created_at.desc() if Meeting.created_at else None).limit(limit).offset(offset).all()
+	
+	return JSONResponse(
+		{
+			"meetings": [
+				{
+					"id": str(m.id),
+					"title": m.title,
+					"status": m.status,
+					"duration_seconds": m.duration_seconds,
+					"created_at": m.created_at.isoformat() if m.created_at else None,
+					"organization_id": str(m.organization_id),
+				}
+				for m in meetings
+			],
+			"total": query.count(),
+			"limit": limit,
+			"offset": offset,
+		}
+	)
+
+
+@app.get("/meetings/{meeting_id}")
+async def get_meeting(meeting_id: str, db: Session = Depends(get_db)) -> JSONResponse:
+	"""Get meeting details including status."""
+	meeting = db.get(Meeting, uuid.UUID(meeting_id))
+	if not meeting:
+		raise HTTPException(status_code=404, detail="Meeting not found")
+
+	return JSONResponse(
+		{
+			"id": str(meeting.id),
+			"title": meeting.title,
+			"status": meeting.status,
+			"duration_seconds": meeting.duration_seconds,
+			"created_at": meeting.created_at.isoformat() if meeting.created_at else None,
+		}
+	)
+
+
+@app.get("/meetings/{meeting_id}/unidentified_speakers")
+async def get_unidentified_speakers(
+	meeting_id: str, db: Session = Depends(get_db)
+) -> JSONResponse:
+	"""
+	Get unidentified speakers with their 15-second snippets and name suggestions.
+	"""
+	from agent_service.database.models import TranscriptionSegment
+
+	meeting_uuid = uuid.UUID(meeting_id)
+	meeting = db.get(Meeting, meeting_uuid)
+	if not meeting:
+		raise HTTPException(status_code=404, detail="Meeting not found")
+
+	# Get all unique unidentified speaker labels from transcription segments
+	segments = db.query(TranscriptionSegment).filter(
+		TranscriptionSegment.meeting_id == meeting_uuid,
+		TranscriptionSegment.speaker_id.is_(None),
+	).all()
+	
+	speaker_labels = set()
+	for seg in segments:
+		if seg.unidentified_speaker_label:
+			speaker_labels.add(seg.unidentified_speaker_label)
+
+	# Get name suggestions for each speaker
+	name_service = NameSuggestionService(db)
+	speakers_with_suggestions: dict[str, list[dict[str, Any]]] = {}
+	
+	for speaker_label in speaker_labels:
+		suggestions = name_service.get_name_suggestions_for_speaker(
+			meeting_id=meeting_uuid,
+			speaker_label=speaker_label,
+		)
+		if suggestions:
+			speakers_with_suggestions[speaker_label] = [
+				{
+					"suggestion_id": str(s.id),
+					"name": s.suggested_name,
+					"confidence": float(s.confidence_score) if s.confidence_score else 0.0,
+					"source_text": s.source_text,
+					"accepted": s.accepted,
+					"segment_start_time": float(seg.start_time_seconds) if (seg := db.query(TranscriptionSegment).filter(
+						TranscriptionSegment.meeting_id == meeting_uuid,
+						TranscriptionSegment.unidentified_speaker_label == speaker_label,
+					).first()) else None,
+					"segment_end_time": float(seg.end_time_seconds) if seg else None,
+				}
+				for s in suggestions
+			]
+
+	return JSONResponse(
+		{
+			"meeting_id": meeting_id,
+			"unidentified_speakers": speakers_with_suggestions,
+		}
+	)
+
+
+@app.put("/meetings/{meeting_id}/speakers/assign")
+async def assign_speaker_name(
+	meeting_id: str,
+	request: SpeakerAssignmentRequest,
+	db: Session = Depends(get_db),
+) -> JSONResponse:
+	"""
+	Assign a name to an unidentified speaker.
+	Creates or updates speaker profile and associates voiceprint.
+	"""
+	from agent_service.services.orchestrator import ProcessingOrchestrator
+
+	meeting_uuid = uuid.UUID(meeting_id)
+	meeting = db.get(Meeting, meeting_uuid)
+	if not meeting:
+		raise HTTPException(status_code=404, detail="Meeting not found")
+
+	# Get speaker service
+	speaker_service = SpeakerService(db)
+
+	# Find the speaker's voiceprint from meeting processing
+	# TODO: Retrieve voiceprint from meeting metadata
+
+	# Assign name (creates new speaker or matches existing)
+	speaker, is_new = speaker_service.assign_name_to_speaker(
+		meeting_id=meeting_uuid,
+		unidentified_speaker_label=request.speaker_label,
+		speaker_name=request.speaker_name,
+		organization_id=meeting.organization_id,
+		voiceprint_embedding=None,  # TODO: Retrieve from meeting
+	)
+
+	db.commit()
+
+	return JSONResponse(
+		{
+			"speaker_id": str(speaker.id),
+			"name": speaker.name,
+			"is_new": is_new,
+			"message": f"Speaker '{request.speaker_name}' assigned to {request.speaker_label}",
+		}
+	)
+
+
+@app.get("/organizations/{org_id}/speakers")
+async def list_organization_speakers(
+	org_id: str, db: Session = Depends(get_db)
+) -> JSONResponse:
+	"""List all known speakers for an organization."""
+	org_uuid = uuid.UUID(org_id)
+	speaker_service = SpeakerService(db)
+	speakers = speaker_service.get_organization_speakers(org_uuid)
+
+	return JSONResponse(
+		{
+			"organization_id": org_id,
+			"speakers": [
+				{
+					"id": str(s.id),
+					"name": s.name,
+					"created_at": s.created_at.isoformat() if s.created_at else None,
+				}
+				for s in speakers
+			],
+		}
+	)
+
+
+@app.get("/meetings/{meeting_id}/transcript")
+async def get_meeting_transcript(meeting_id: str, db: Session = Depends(get_db)) -> JSONResponse:
+	"""Get the full speaker-labeled transcript for a meeting."""
+	from agent_service.database.models import TranscriptionSegment
+
+	meeting_uuid = uuid.UUID(meeting_id)
+	meeting = db.get(Meeting, meeting_uuid)
+	if not meeting:
+		raise HTTPException(status_code=404, detail="Meeting not found")
+
+	segments = db.query(TranscriptionSegment).filter(
+		TranscriptionSegment.meeting_id == meeting_uuid
+	).order_by(TranscriptionSegment.start_time_seconds).all()
+
+	transcript_segments = [
+		{
+			"start": seg.start_time_seconds,
+			"end": seg.end_time_seconds,
+			"text": seg.hebrew_text,
+			"speaker": seg.unidentified_speaker_label,
+			"speaker_id": str(seg.speaker_id) if seg.speaker_id else None,
+		}
+		for seg in segments
+	]
+
+	return JSONResponse(
+		{
+			"meeting_id": meeting_id,
+			"transcript_segments": transcript_segments,
+		}
+	)
+
+
+@app.get("/meetings/{meeting_id}/summary")
+async def get_meeting_summary(meeting_id: str, db: Session = Depends(get_db)) -> JSONResponse:
+	"""Get the AI-generated summary for a meeting."""
+	from agent_service.database.models import MeetingSummary
+
+	meeting_uuid = uuid.UUID(meeting_id)
+	meeting = db.get(Meeting, meeting_uuid)
+	if not meeting:
+		raise HTTPException(status_code=404, detail="Meeting not found")
+
+	summary = db.query(MeetingSummary).filter(MeetingSummary.meeting_id == meeting_uuid).first()
+
+	if not summary:
+		raise HTTPException(status_code=404, detail="Summary not found for this meeting")
+
+	return JSONResponse(
+		{
+			"meeting_id": meeting_id,
+			"summary": summary.summary_json,
+		}
+	)
+
+
+@app.delete("/meetings/{meeting_id}")
+async def delete_meeting(
+	meeting_id: str,
+	organization_id: str | None = None,
+	db: Session = Depends(get_db),
+) -> JSONResponse:
+	"""
+	Delete a meeting and all associated data.
+	
+	Deletes:
+	- Meeting record (cascades to transcription_segments, meeting_summaries, name_suggestions)
+	- Audio file from S3 or local storage
+	- Speaker snippet files
+	
+	Args:
+		meeting_id: Meeting UUID to delete
+		organization_id: Optional organization ID for validation (required in production)
+	
+	Returns:
+		Success response with deleted meeting details
+	"""
+	import logging
+	import os
+	import shutil
+	from pathlib import Path
+	
+	logger = logging.getLogger(__name__)
+	
+	try:
+		meeting_uuid = uuid.UUID(meeting_id)
+	except ValueError:
+		raise HTTPException(status_code=400, detail=f"Invalid meeting_id format: {meeting_id}")
+	
+	meeting = db.get(Meeting, meeting_uuid)
+	if not meeting:
+		raise HTTPException(status_code=404, detail="Meeting not found")
+	
+	# Validate organization ownership if provided
+	if organization_id:
+		try:
+			org_uuid = uuid.UUID(organization_id)
+			if meeting.organization_id != org_uuid:
+				raise HTTPException(
+					status_code=403, detail="Meeting does not belong to the specified organization"
+				)
+		except ValueError:
+			raise HTTPException(status_code=400, detail=f"Invalid organization_id format: {organization_id}")
+	
+	# Prevent deletion of meetings in processing status (optional - could allow with warning)
+	if meeting.status == "processing":
+		raise HTTPException(
+			status_code=409,
+			detail="Cannot delete meeting while it is being processed. Please wait for processing to complete or fail.",
+		)
+	
+	# Store meeting info for response
+	meeting_title = meeting.title
+	audio_s3_key = meeting.audio_s3_key
+	
+	# Delete audio file
+	audio_deleted = False
+	try:
+		settings = get_settings()
+		
+		# Check if audio_s3_key is an S3 key or local file path
+		if audio_s3_key and audio_s3_key != "pending":
+			if settings.s3_bucket and not os.path.exists(audio_s3_key):
+				# Assume it's an S3 key
+				try:
+					s3_client = boto3.client(
+						"s3",
+						region_name=settings.s3_region,
+						aws_access_key_id=settings.aws_access_key_id,
+						aws_secret_access_key=settings.aws_secret_access_key,
+					)
+					# Check if key exists before deleting
+					try:
+						s3_client.head_object(Bucket=settings.s3_bucket, Key=audio_s3_key)
+						s3_client.delete_object(Bucket=settings.s3_bucket, Key=audio_s3_key)
+						audio_deleted = True
+						logger.info(f"Deleted audio file from S3: {audio_s3_key}")
+					except ClientError as e:
+						if e.response["Error"]["Code"] == "404":
+							logger.warning(f"Audio file not found in S3: {audio_s3_key}")
+						else:
+							logger.error(f"Failed to delete audio from S3: {e}")
+				except Exception as e:
+					logger.error(f"Error deleting audio from S3: {e}")
+			else:
+				# Local file path
+				try:
+					if os.path.exists(audio_s3_key):
+						os.remove(audio_s3_key)
+						audio_deleted = True
+						logger.info(f"Deleted local audio file: {audio_s3_key}")
+				except Exception as e:
+					logger.error(f"Failed to delete local audio file: {e}")
+		
+		# Delete snippet files (if they exist)
+		snippets_deleted = 0
+		
+		# Try S3 snippets
+		if settings.s3_bucket:
+			try:
+				s3_client = boto3.client(
+					"s3",
+					region_name=settings.s3_region,
+					aws_access_key_id=settings.aws_access_key_id,
+					aws_secret_access_key=settings.aws_secret_access_key,
+				)
+				# List and delete all objects in the snippets prefix
+				snippet_prefix = f"meetings/{meeting_id}/snippets/"
+				paginator = s3_client.get_paginator("list_objects_v2")
+				pages = paginator.paginate(Bucket=settings.s3_bucket, Prefix=snippet_prefix)
+				
+				for page in pages:
+					if "Contents" in page:
+						for obj in page["Contents"]:
+							try:
+								s3_client.delete_object(Bucket=settings.s3_bucket, Key=obj["Key"])
+								snippets_deleted += 1
+							except Exception as e:
+								logger.warning(f"Failed to delete snippet {obj['Key']}: {e}")
+			except Exception as e:
+				logger.warning(f"Error deleting snippets from S3: {e}")
+		
+		# Try local snippets
+		local_snippets_dir = Path(f"agent_service/snippets/{meeting_id}")
+		if local_snippets_dir.exists() and local_snippets_dir.is_dir():
+			try:
+				# Count files before deletion
+				snippet_files = list(local_snippets_dir.glob("*"))
+				snippets_deleted = len(snippet_files)
+				shutil.rmtree(local_snippets_dir)
+				logger.info(f"Deleted local snippets directory: {local_snippets_dir} ({snippets_deleted} files)")
+			except Exception as e:
+				logger.warning(f"Failed to delete local snippets directory: {e}")
+		
+	except Exception as e:
+		logger.error(f"Error during file cleanup: {e}", exc_info=True)
+		# Continue with database deletion even if file deletion fails
+	
+	# Delete meeting record (cascade will handle related records)
+	try:
+		db.delete(meeting)
+		db.commit()
+		logger.info(f"Deleted meeting {meeting_id}: {meeting_title}")
+	except Exception as e:
+		db.rollback()
+		logger.error(f"Failed to delete meeting from database: {e}", exc_info=True)
+		raise HTTPException(status_code=500, detail=f"Failed to delete meeting: {str(e)}")
+	
+	return JSONResponse(
+		{
+			"meeting_id": meeting_id,
+			"title": meeting_title,
+			"status": "deleted",
+			"audio_deleted": audio_deleted,
+			"snippets_deleted": snippets_deleted,
+			"message": "Meeting deleted successfully",
+		}
+	)
 

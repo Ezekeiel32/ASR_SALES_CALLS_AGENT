@@ -1,0 +1,8 @@
+
+{
+  "name": "IvriMeet - Hebrew Meeting Summarizer",
+  "description": "A state-of-the-art B2B-SaaS web application for Hebrew meeting summarization with speaker-aware transcription, featuring real-time transcription, AI-powered summaries, and speaker management.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

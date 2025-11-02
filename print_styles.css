@@ -1,0 +1,25 @@
+@media print {
+  .page-two-wrapper {
+    page-break-before: always;
+    break-before: page;
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100vh - 24mm);
+  }
+
+  .content-wrapper {
+    flex-grow: 1;
+  }
+
+  .signature {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-top: auto;
+    padding-top: 30px;
+  }
+
+  .page-break {
+    page-break-before: always;
+    break-before: page;
+  }
+}

@@ -1,0 +1,363 @@
+---
+alwaysApply: true
+Hebrew Meeting Summarizer - Complete Implementation Plan
+Current State Analysis
+Existing Assets:
+
+agent_service/clients/ivrit_client.py: Ivrit.ai transcription via RunPod (fully functional)
+agent_service/summarizers/nvidia.py: DeepSeek summarization (fully functional)
+agent_service/api.py: FastAPI endpoints (/transcribe, /analyze)
+agent_service/cli.py: CLI tool for batch processing
+Basic configuration system with environment variables
+Missing Components:
+
+Speaker diarization processing (Ivrit returns segments but no speaker labels extraction)
+Voiceprint generation and storage
+PostgreSQL database with pgvector
+Speaker Service microservice
+PyAnnote integration for diarization validation
+Audio snippet extraction (15-second samples)
+Hebrew NLP for name extraction
+Frontend application (Next.js)
+Real-time WebRTC/WebSocket processing
+Multi-tenancy architecture
+Audio storage (S3 integration)
+Phase 1: Core Database & Speaker Foundation (Week 1-2)
+1.1 Database Setup
+Files to create:
+
+alembic/versions/001_initial_schema.py: Database migrations
+agent_service/database/__init__.py: Database connection management
+agent_service/database/models.py: SQLAlchemy models
+Schema implementation:
+
+Enable pgvector extension
+Create tables: organizations, users, speakers, meetings, transcription_segments, meeting_summaries, name_suggestions, audit_logs
+Add indexes on organization_id, speaker_id, voiceprint embeddings (IVFFlat/HNSW)
+Implement Row-Level Security (RLS) policies for multi-tenancy
+1.2 Enhance TranscriptionResult Model
+File to modify:
+
+agent_service/config.py: Extend TranscriptionResult to include speaker labels from Ivrit segments
+Changes:
+
+Add speaker_labels: list[str] | None field
+Add speaker_segments: list[dict[str, Any]] | None for per-speaker segment mapping
+Parse Ivrit.ai response to extract speaker information from segments
+1.3 Speaker Service Foundation
+Files to create:
+
+agent_service/services/__init__.py
+agent_service/services/speaker_service.py: Core speaker management
+agent_service/services/voiceprint_service.py: Voiceprint generation and matching
+Key functionality:
+
+Voiceprint generation using speechbrain/spkrec-ecapa-voxceleb model
+Embedding generation from audio segments
+Cosine similarity matching against stored voiceprints
+Speaker profile storage and retrieval
+Phase 2: Audio Processing & Diarization Enhancement (Week 3-4)
+2.1 PyAnnote Integration
+Files to create:
+
+agent_service/services/diarization_service.py: PyAnnote wrapper
+agent_service/services/diarization_merger.py: Merge Ivrit.ai and PyAnnote results
+Implementation:
+
+Containerized PyAnnote service (Docker)
+Diarization merger algorithm with confidence scoring
+Fallback handling for low-confidence segments
+2.2 Audio Snippet Extraction
+Files to create:
+
+agent_service/services/audio_processor.py: Audio manipulation utilities
+agent_service/services/snippet_extractor.py: Extract 15-second speaker samples
+Functionality:
+
+Use librosa or pydub to extract 15-second representative snippets per speaker
+Store snippets in S3 with signed URLs
+Generate snippet metadata (start_time, end_time, speaker_label)
+2.3 Enhance Ivrit Client
+File to modify:
+
+agent_service/clients/ivrit_client.py
+Changes:
+
+Extract speaker labels from Ivrit segments (e.g., speaker_0, speaker_1)
+Return speaker-aware transcription results
+Add speaker mapping in TranscriptionResult.segments
+Phase 3: Hebrew NLP & Name Extraction (Week 5)
+3.1 Hebrew Name Extraction Service
+Files to create:
+
+agent_service/services/hebrew_nlp.py: Hebrew NLP processing
+agent_service/services/name_extractor.py: Extract names from transcripts
+Implementation:
+
+Use spacy with Hebrew model or hebrew-nlp libraries
+Pattern matching for Hebrew names (common prefixes: "שלום", "אני", "קוראים לי")
+Context analysis for self-introductions
+Confidence scoring for name suggestions
+3.2 Name Suggestion Engine
+Files to create:
+
+agent_service/services/name_suggestion_service.py: Match names to speakers
+Logic:
+
+Analyze transcript for name mentions near speaker segments
+Match names to unidentified speakers based on temporal proximity
+Generate name_suggestions records with confidence scores
+Support user editing and correction
+Phase 4: Enhanced Summarization with Speaker Awareness (Week 6)
+4.1 Speaker-Aware Summarization
+File to modify:
+
+agent_service/summarizers/nvidia.py
+Changes:
+
+Update prompt to include speaker labels in transcript
+Format transcript as "Speaker 1: [text]" before sending to DeepSeek
+Extract action items per speaker
+Maintain speaker identity in summary output
+4.2 Enhanced Summary Structure
+File to modify:
+
+agent_service/api.py: /analyze endpoint
+Changes:
+
+Include speaker-labeled transcript in request
+Return summary with speaker-specific sections
+Link action items to speakers
+Phase 5: API Enhancements & New Endpoints (Week 7)
+5.1 New REST Endpoints
+File to modify:
+
+agent_service/api.py
+New endpoints:
+
+POST /meetings/upload: Upload audio, trigger full processing pipeline
+GET /meetings/{meeting_id}: Get meeting details with status
+GET /meetings/{meeting_id}/unidentified_speakers: Get speaker snippets + suggestions
+PUT /meetings/{meeting_id}/speakers/assign: Assign names to speakers
+GET /organizations/{org_id}/speakers: List known speakers
+POST /speakers: Create/register new speaker
+GET /meetings/{meeting_id}/transcript: Get speaker-labeled transcript
+GET /meetings/{meeting_id}/summary: Get speaker-aware summary
+5.2 Processing Orchestrator
+Files to create:
+
+agent_service/services/orchestrator.py: Coordinate post-meeting processing
+agent_service/services/processing_queue.py: Celery/Redis task queue integration
+Workflow:
+
+Receive audio upload → save to S3
+Trigger async processing job
+Speech Service: Ivrit.ai + PyAnnote diarization
+Speaker Service: Extract snippets, generate voiceprints, match to known speakers
+Name Suggestion Service: Extract names from transcript, suggest matches
+Summarization Service: Generate speaker-aware summary
+Store all results in database
+Notify client via WebSocket/polling
+Phase 6: Real-time Processing (Week 8-9)
+6.1 WebSocket Gateway Service
+Files to create:
+
+agent_service/gateway/__init__.py
+agent_service/gateway/websocket_handler.py: WebSocket connection management
+agent_service/gateway/audio_stream_handler.py: Real-time audio chunk processing
+Implementation:
+
+FastAPI WebSocket endpoints
+Redis pub/sub for audio chunk distribution
+Real-time transcription streaming
+Speaker detection during meeting
+6.2 Real-time Audio Processing
+Files to create:
+
+agent_service/services/realtime_service.py: Real-time pipeline
+Flow:
+
+Receive audio chunks via WebSocket
+Send to Ivrit.ai for real-time transcription
+Stream transcript updates to client
+Maintain session state
+Phase 7: Frontend Application (Week 10-14)
+7.1 Next.js Project Setup
+Files to create:
+
+frontend/package.json: Next.js 14, TypeScript, Tailwind CSS
+frontend/tsconfig.json
+frontend/next.config.js
+frontend/tailwind.config.js
+7.2 Core Pages & Components
+Files to create:
+
+frontend/app/layout.tsx: Root layout with authentication
+frontend/app/dashboard/page.tsx: Meeting list dashboard
+frontend/app/meetings/[id]/page.tsx: Meeting detail view
+frontend/app/meetings/[id]/speakers/page.tsx: Speaker assignment UI
+frontend/app/meetings/new/page.tsx: Upload/start meeting
+Key components:
+
+frontend/components/meetings/MeetingCard.tsx
+frontend/components/meetings/SpeakerAssignment.tsx: 15-second snippet player + name input
+frontend/components/transcription/LiveTranscript.tsx: Real-time transcript display
+frontend/components/summary/SummaryView.tsx: Speaker-aware summary display
+frontend/components/audio/AudioRecorder.tsx: WebRTC audio capture
+7.3 Israeli SOTA Design System
+Files to create:
+
+frontend/styles/globals.css: Custom design tokens
+frontend/components/ui/: Reusable UI components (Button, Input, Card, etc.)
+Hebrew RTL support
+Modern, clean aesthetic with Israeli tech company feel
+7.4 State Management & API Client
+Files to create:
+
+frontend/lib/api.ts: API client with authentication
+frontend/lib/store/meetings.ts: Zustand store for meetings
+frontend/lib/store/speakers.ts: Zustand store for speakers
+frontend/lib/websocket.ts: WebSocket client for real-time updates
+Phase 8: Infrastructure & DevOps (Week 15-16)
+8.1 Docker & Kubernetes
+Files to create:
+
+Dockerfile: Multi-stage build for Python services
+docker-compose.yml: Local development stack
+k8s/deployment.yaml: Kubernetes deployment manifests
+k8s/service.yaml: Service definitions
+k8s/configmap.yaml: Configuration management
+8.2 CI/CD Pipeline
+Files to create:
+
+.github/workflows/ci.yml: GitHub Actions pipeline
+.github/workflows/deploy.yml: Deployment automation
+8.3 Infrastructure as Code
+Files to create:
+
+terraform/main.tf: AWS infrastructure (EKS, RDS, S3)
+terraform/variables.tf: Terraform variables
+terraform/outputs.tf: Infrastructure outputs
+8.4 Monitoring & Logging
+Files to create:
+
+agent_service/monitoring/prometheus.py: Metrics collection
+agent_service/monitoring/logging.py: Structured logging
+grafana/dashboards/: Grafana dashboard definitions
+Phase 9: Security & Multi-tenancy (Week 17)
+9.1 Authentication Service
+Files to create:
+
+agent_service/auth/__init__.py
+agent_service/auth/jwt_handler.py: JWT token management
+agent_service/auth/middleware.py: FastAPI authentication middleware
+Integration with Auth0 for SSO (optional)
+9.2 Row-Level Security
+Files to modify:
+
+Database migration: Add RLS policies to all tables
+Ensure all queries filter by organization_id
+9.3 Encryption & Compliance
+Files to create:
+
+agent_service/security/encryption.py: Encrypt voiceprints at application level
+agent_service/security/audit.py: Audit logging service
+Phase 10: Testing & Optimization (Week 18-20)
+10.1 Test Suite
+Files to create:
+
+tests/unit/test_speaker_service.py
+tests/unit/test_voiceprint_service.py
+tests/unit/test_name_extractor.py
+tests/integration/test_processing_pipeline.py
+tests/e2e/test_meeting_workflow.py
+10.2 Performance Optimization
+Database query optimization
+Voiceprint matching optimization (batch processing)
+Audio processing pipeline optimization
+Frontend bundle optimization
+Technology Stack Additions
+Backend Dependencies
+# Add to requirements.txt:
+sqlalchemy==2.0.23
+alembic==1.12.1
+psycopg2-binary==2.9.9
+pgvector==0.2.4
+boto3==1.34.0  # S3 integration
+celery==5.3.4  # Async task processing
+redis==5.0.1
+librosa==0.10.1
+soundfile==0.12.1
+torch==2.1.0
+torchaudio==2.1.0
+speechbrain==0.5.16
+pyannote.audio==3.1.1
+spacy[hebrew]==3.7.0
+python-multipart==0.0.9
+python-jose[cryptography]==3.3.0  # JWT
+passlib[bcrypt]==1.7.4
+Frontend Dependencies
+{
+  "dependencies": {
+    "next": "^14.0.0",
+    "react": "^18.2.0",
+    "typescript": "^5.2.2",
+    "tailwindcss": "^3.3.0",
+    "zustand": "^4.4.6",
+    "react-query": "^3.39.3",
+    "socket.io-client": "^4.7.4",
+    "recordrtc": "^5.6.2",
+    "recharts": "^2.8.0"
+  }
+}
+Key Implementation Details
+Voiceprint Matching Algorithm
+# Pseudocode for voiceprint matching
+1. Generate embedding for new speaker from 15-second snippet
+2. Query PostgreSQL with pgvector: 
+   SELECT * FROM speakers 
+   WHERE organization_id = $1 
+   AND voiceprint_embedding <=> $2 < 0.1  -- cosine distance
+   ORDER BY voiceprint_embedding <=> $2
+   LIMIT 1
+3. If match found (similarity > 0.9), auto-assign name
+4. Otherwise, create new unidentified speaker
+Hebrew Name Extraction Pattern
+# Common Hebrew self-introduction patterns:
+- "שלום, אני [NAME]"
+- "קוראים לי [NAME]"
+- "אני [NAME]"
+- "[NAME] זה השם שלי"
+# Use regex + NLP to extract names from context
+Processing Pipeline Flow
+Audio Upload → S3 Storage
+  ↓
+Queue Processing Job (Celery)
+  ↓
+[Parallel] Ivrit.ai Transcription + PyAnnote Diarization
+  ↓
+Merge Diarization Results
+  ↓
+[Parallel] Extract Snippets + Generate Voiceprints + Extract Names
+  ↓
+Match Voiceprints to Known Speakers
+  ↓
+Generate Name Suggestions
+  ↓
+Summarize with DeepSeek (speaker-aware)
+  ↓
+Store All Results in PostgreSQL
+  ↓
+Notify Client (WebSocket/Polling)
+Migration Strategy
+Phase 1-2: Build database and speaker services alongside existing code
+Phase 3-5: Enhance existing endpoints, add new ones
+Phase 6-7: Add real-time capabilities and frontend
+Phase 8-10: Production hardening
+Success Metrics
+Speaker diarization accuracy: >90%
+Voiceprint matching accuracy: >95% (within same org)
+Hebrew name extraction accuracy: >85%
+Real-time transcription latency: <2 seconds
+System uptime: >99.9%
+---
