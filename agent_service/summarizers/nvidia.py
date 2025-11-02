@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from openai import AsyncOpenAI
@@ -8,16 +9,45 @@ from agent_service.config import Settings, get_settings
 from agent_service.summarizers.base import SummaryResult, Summarizer
 
 
-SYSTEM_PROMPT = (
-	"You are an expert meeting analyst specializing in comprehensive, speaker-aware summaries. "
-	"Your goal is to create detailed, useful, and concise summaries that clearly identify who said what. "
-	"When speaker labels are provided, you MUST maintain speaker identity throughout the summary. "
-	"Structure your summary based on the meeting context: "
-	"- For business/formal meetings: Use structured sections (Participants, Agenda, Discussion, Decisions, Action Items). "
-	"- For sales calls: Focus on products, objections, commitments, next steps with clear speaker attribution. "
-	"- For informal discussions: Use a narrative flow with speaker attribution. "
-	"Always be specific about which speaker made each point. Format should be context-aware and professional."
-)
+def _load_system_prompt() -> str:
+	"""
+	Load and merge system prompts from markdown files.
+	
+	Returns:
+		Merged prompt content from both prompt files
+	"""
+	# Get the directory of this file
+	current_dir = Path(__file__).parent.parent
+	
+	# Paths to prompt files
+	prompt1_path = current_dir / "ivreetmeet-enhanced-prompt.md"
+	prompt2_path = current_dir / "ivreetmeet-enhanced-prompt1.md"
+	
+	# Load first prompt file
+	prompt1_content = ""
+	if prompt1_path.exists():
+		with open(prompt1_path, "r", encoding="utf-8") as f:
+			prompt1_content = f.read().strip()
+	else:
+		raise FileNotFoundError(f"Prompt file not found: {prompt1_path}")
+	
+	# Load second prompt file and merge
+	prompt2_content = ""
+	if prompt2_path.exists():
+		with open(prompt2_path, "r", encoding="utf-8") as f:
+			prompt2_content = f.read().strip()
+	
+	# Merge both prompts with a separator
+	if prompt2_content:
+		merged_prompt = f"{prompt1_content}\n\n---\n\n{prompt2_content}"
+	else:
+		merged_prompt = prompt1_content
+	
+	return merged_prompt
+
+
+# Load the system prompt at module import time
+SYSTEM_PROMPT = _load_system_prompt()
 
 
 class NvidiaDeepSeekSummarizer(Summarizer):
