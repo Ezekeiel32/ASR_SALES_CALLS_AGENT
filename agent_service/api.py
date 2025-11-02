@@ -527,21 +527,15 @@ async def upload_meeting(
 
 @app.get("/meetings")
 async def list_meetings(
-	organization_id: str | None = None,
 	status: str | None = None,
 	limit: int = 50,
 	offset: int = 0,
+	current_user: User = Depends(get_current_user),
 	db: Session = Depends(get_db),
 ) -> JSONResponse:
-	"""List meetings, optionally filtered by organization and status."""
-	query = db.query(Meeting)
-	
-	if organization_id:
-		try:
-			org_uuid = uuid.UUID(organization_id)
-			query = query.filter(Meeting.organization_id == org_uuid)
-		except ValueError:
-			raise HTTPException(status_code=400, detail=f"Invalid organization_id: {organization_id}")
+	"""List meetings for the authenticated user's organization. Requires authentication."""
+	# Filter by user's organization automatically
+	query = db.query(Meeting).filter(Meeting.organization_id == current_user.organization_id)
 	
 	if status:
 		query = query.filter(Meeting.status == status)
@@ -588,10 +582,13 @@ async def get_meeting(meeting_id: str, db: Session = Depends(get_db)) -> JSONRes
 
 @app.get("/meetings/{meeting_id}/unidentified_speakers")
 async def get_unidentified_speakers(
-	meeting_id: str, db: Session = Depends(get_db)
+	meeting_id: str,
+	current_user: User = Depends(get_current_user),
+	db: Session = Depends(get_db),
 ) -> JSONResponse:
 	"""
 	Get unidentified speakers with their 15-second snippets and name suggestions.
+	Requires authentication.
 	"""
 	from agent_service.database.models import TranscriptionSegment
 
@@ -599,6 +596,10 @@ async def get_unidentified_speakers(
 	meeting = db.get(Meeting, meeting_uuid)
 	if not meeting:
 		raise HTTPException(status_code=404, detail="Meeting not found")
+	
+	# Verify meeting belongs to user's organization
+	if meeting.organization_id != current_user.organization_id:
+		raise HTTPException(status_code=403, detail="Meeting does not belong to your organization")
 
 	# Get all unique unidentified speaker labels from transcription segments
 	segments = db.query(TranscriptionSegment).filter(
@@ -649,11 +650,13 @@ async def get_unidentified_speakers(
 async def assign_speaker_name(
 	meeting_id: str,
 	request: SpeakerAssignmentRequest,
+	current_user: User = Depends(get_current_user),
 	db: Session = Depends(get_db),
 ) -> JSONResponse:
 	"""
 	Assign a name to an unidentified speaker.
 	Creates or updates speaker profile and associates voiceprint.
+	Requires authentication.
 	"""
 	from agent_service.services.orchestrator import ProcessingOrchestrator
 
@@ -661,6 +664,10 @@ async def assign_speaker_name(
 	meeting = db.get(Meeting, meeting_uuid)
 	if not meeting:
 		raise HTTPException(status_code=404, detail="Meeting not found")
+	
+	# Verify meeting belongs to user's organization
+	if meeting.organization_id != current_user.organization_id:
+		raise HTTPException(status_code=403, detail="Meeting does not belong to your organization")
 
 	# Get speaker service
 	speaker_service = SpeakerService(db)
@@ -691,10 +698,17 @@ async def assign_speaker_name(
 
 @app.get("/organizations/{org_id}/speakers")
 async def list_organization_speakers(
-	org_id: str, db: Session = Depends(get_db)
+	org_id: str,
+	current_user: User = Depends(get_current_user),
+	db: Session = Depends(get_db),
 ) -> JSONResponse:
-	"""List all known speakers for an organization."""
+	"""List all known speakers for an organization. Requires authentication."""
 	org_uuid = uuid.UUID(org_id)
+	
+	# Verify user belongs to this organization
+	if current_user.organization_id != org_uuid:
+		raise HTTPException(status_code=403, detail="You don't have access to this organization")
+	
 	speaker_service = SpeakerService(db)
 	speakers = speaker_service.get_organization_speakers(org_uuid)
 
@@ -714,14 +728,22 @@ async def list_organization_speakers(
 
 
 @app.get("/meetings/{meeting_id}/transcript")
-async def get_meeting_transcript(meeting_id: str, db: Session = Depends(get_db)) -> JSONResponse:
-	"""Get the full speaker-labeled transcript for a meeting."""
+async def get_meeting_transcript(
+	meeting_id: str,
+	current_user: User = Depends(get_current_user),
+	db: Session = Depends(get_db),
+) -> JSONResponse:
+	"""Get the full speaker-labeled transcript for a meeting. Requires authentication."""
 	from agent_service.database.models import TranscriptionSegment
 
 	meeting_uuid = uuid.UUID(meeting_id)
 	meeting = db.get(Meeting, meeting_uuid)
 	if not meeting:
 		raise HTTPException(status_code=404, detail="Meeting not found")
+	
+	# Verify meeting belongs to user's organization
+	if meeting.organization_id != current_user.organization_id:
+		raise HTTPException(status_code=403, detail="Meeting does not belong to your organization")
 
 	segments = db.query(TranscriptionSegment).filter(
 		TranscriptionSegment.meeting_id == meeting_uuid
@@ -747,14 +769,22 @@ async def get_meeting_transcript(meeting_id: str, db: Session = Depends(get_db))
 
 
 @app.get("/meetings/{meeting_id}/summary")
-async def get_meeting_summary(meeting_id: str, db: Session = Depends(get_db)) -> JSONResponse:
-	"""Get the AI-generated summary for a meeting."""
+async def get_meeting_summary(
+	meeting_id: str,
+	current_user: User = Depends(get_current_user),
+	db: Session = Depends(get_db),
+) -> JSONResponse:
+	"""Get the AI-generated summary for a meeting. Requires authentication."""
 	from agent_service.database.models import MeetingSummary
 
 	meeting_uuid = uuid.UUID(meeting_id)
 	meeting = db.get(Meeting, meeting_uuid)
 	if not meeting:
 		raise HTTPException(status_code=404, detail="Meeting not found")
+	
+	# Verify meeting belongs to user's organization
+	if meeting.organization_id != current_user.organization_id:
+		raise HTTPException(status_code=403, detail="Meeting does not belong to your organization")
 
 	summary = db.query(MeetingSummary).filter(MeetingSummary.meeting_id == meeting_uuid).first()
 
