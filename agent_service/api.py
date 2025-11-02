@@ -836,16 +836,11 @@ async def delete_meeting(
 	if not meeting:
 		raise HTTPException(status_code=404, detail="Meeting not found")
 	
-	# Validate organization ownership if provided
-	if organization_id:
-		try:
-			org_uuid = uuid.UUID(organization_id)
-			if meeting.organization_id != org_uuid:
-				raise HTTPException(
-					status_code=403, detail="Meeting does not belong to the specified organization"
-				)
-		except ValueError:
-			raise HTTPException(status_code=400, detail=f"Invalid organization_id format: {organization_id}")
+	# Verify meeting belongs to user's organization
+	if meeting.organization_id != current_user.organization_id:
+		raise HTTPException(
+			status_code=403, detail="Meeting does not belong to your organization"
+		)
 	
 	# Prevent deletion of meetings in processing status (optional - could allow with warning)
 	if meeting.status == "processing":
