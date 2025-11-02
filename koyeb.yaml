@@ -1,0 +1,19 @@
+services:
+  - name: api
+    type: web
+    dockerfile: Dockerfile
+    ports:
+      - port: 8000
+    env:
+      - name: PORT
+        value: "8000"
+      - name: PYTHONUNBUFFERED
+        value: "1"
+    healthcheck:
+      path: /healthz
+      interval: 30
+      timeout: 10
+    scaling:
+      min: 1
+      max: 3
+

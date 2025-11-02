@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from typing import Any
 
@@ -9,16 +10,21 @@ from sqlalchemy.orm import Session
 
 import asyncio
 
+from agent_service.config import get_settings
 from agent_service.database.connection import get_db_session
 from agent_service.services.orchestrator import ProcessingOrchestrator
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
+
+# Get Redis URL from environment (Railway provides REDIS_URL automatically)
+redis_url = settings.redis_url or os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 # Initialize Celery app
 celery_app = Celery(
 	"hebrew_meetings",
-	broker="redis://localhost:6379/0",
-	backend="redis://localhost:6379/0",
+	broker=redis_url,
+	backend=redis_url,
 )
 
 celery_app.conf.update(

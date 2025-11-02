@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 import uuid
 from typing import Any
 
@@ -14,6 +16,10 @@ if not hasattr(torchaudio, 'list_audio_backends'):
         """Compatibility shim for torchaudio < 2.1"""
         return ['soundfile']  # Default backend
     torchaudio.list_audio_backends = list_audio_backends
+
+# Configure HuggingFace to use minimal local cache (will be cleaned up)
+from agent_service.services.s3_model_storage import configure_huggingface_cache_for_s3
+configure_huggingface_cache_for_s3()
 
 # Lazy import to avoid speechbrain compatibility issues
 try:

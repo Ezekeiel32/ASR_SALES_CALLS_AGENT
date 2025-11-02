@@ -21,7 +21,10 @@ from agent_service.database.models import Meeting, Organization, Speaker
 from agent_service.service import AgentService
 from agent_service.services import NameSuggestionService, SpeakerService
 from agent_service.services.processing_queue import enqueue_meeting_processing, get_processing_status
+from agent_service.services.s3_model_storage import configure_huggingface_cache_for_s3
 
+# Configure HuggingFace to use minimal local cache (models will be in S3)
+configure_huggingface_cache_for_s3()
 
 app = FastAPI(title="Hebrew Medical Sales Call Agent", version="0.1.0")
 

@@ -14,6 +14,9 @@ from agent_service.config import get_settings
 from agent_service.database.models import Meeting, MeetingSummary, TranscriptionSegment
 from agent_service.services.audio_processor import AudioProcessor
 from agent_service.services.diarization_merger import DiarizationMerger
+
+logger = logging.getLogger(__name__)
+
 # Import DiarizationService conditionally to avoid startup errors
 try:
 	from agent_service.services.diarization_service import DiarizationService

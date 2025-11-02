@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import logging
+import os
 import tempfile
 from pathlib import Path
 from typing import Any
 
 import torchaudio
 from pyannote.audio import Pipeline
+
+from agent_service.services.s3_model_storage import configure_huggingface_cache_for_s3
+
+# Configure HuggingFace to use minimal local cache
+configure_huggingface_cache_for_s3()
 
 logger = logging.getLogger(__name__)
 

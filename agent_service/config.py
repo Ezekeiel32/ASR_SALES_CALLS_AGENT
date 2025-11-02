@@ -42,8 +42,17 @@ class Settings(BaseSettings):
 	nvidia_stream: bool = Field(default=False)
 
 	# Database
+	# Railway uses DATABASE_URL, but we keep database_url for backward compatibility
 	database_url: str = Field(
-		default="postgresql://postgres:postgres@localhost:5432/hebrew_meetings"
+		default="postgresql://postgres:postgres@localhost:5432/hebrew_meetings",
+		validation_alias="DATABASE_URL",  # Railway sets this automatically
+	)
+	
+	# Redis (for Celery)
+	# Railway provides REDIS_URL automatically
+	redis_url: str | None = Field(
+		default=None,
+		validation_alias="REDIS_URL",
 	)
 
 	# Storage (S3)

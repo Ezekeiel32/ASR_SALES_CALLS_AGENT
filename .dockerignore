@@ -1,0 +1,58 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+.venv
+venv
+env
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Tests
+.pytest_cache
+.coverage
+htmlcov
+
+# Docs
+DOCS_ONLY_PUT_MD_FILES_HERE!!
+*.md
+!README.md
+
+# Logs
+*.log
+
+# EC2
+*.pem
+ec2_*.sh
+ivrimeet-backend-key.pem
+
+# Railway
+railway.json
+Procfile
+nixpacks.toml
+
+# Local files
+voice_sample.wav
+*.mp3
+*.wav
+
