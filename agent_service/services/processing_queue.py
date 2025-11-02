@@ -49,28 +49,42 @@ celery_conf = {
 	"result_serializer": "json",
 	"timezone": "UTC",
 	"enable_utc": True,
+	# Worker settings to prevent crashes
+	"worker_prefetch_multiplier": 1,  # Prevent worker from taking too many tasks
+	"task_acks_late": True,  # Acknowledge tasks only after completion
+	"worker_max_tasks_per_child": 50,  # Restart worker after 50 tasks to prevent memory leaks
+	"task_time_limit": 3600,  # 1 hour max per task
+	"task_soft_time_limit": 3300,  # Soft limit 55 minutes
 }
 
 # Add Redis SSL configuration if using rediss://
 # This is required for Upstash Redis and other TLS-enabled Redis services
 if is_ssl:
-	celery_conf.update({
-		"broker_use_ssl": {
-			"ssl_cert_reqs": ssl.CERT_NONE,  # CERT_NONE for Redis services without client certs
-			"ssl_ca_certs": None,
-			"ssl_certfile": None,
-			"ssl_keyfile": None,
-		},
-		"redis_backend_use_ssl": {
-			"ssl_cert_reqs": ssl.CERT_NONE,
-			"ssl_ca_certs": None,
-			"ssl_certfile": None,
-			"ssl_keyfile": None,
-		},
-	})
-	logger.info("Celery SSL configuration applied for Redis broker and backend")
+	try:
+		celery_conf.update({
+			"broker_use_ssl": {
+				"ssl_cert_reqs": ssl.CERT_NONE,  # CERT_NONE for Redis services without client certs
+				"ssl_ca_certs": None,
+				"ssl_certfile": None,
+				"ssl_keyfile": None,
+			},
+			"redis_backend_use_ssl": {
+				"ssl_cert_reqs": ssl.CERT_NONE,
+				"ssl_ca_certs": None,
+				"ssl_certfile": None,
+				"ssl_keyfile": None,
+			},
+		})
+		logger.info("Celery SSL configuration applied for Redis broker and backend")
+	except Exception as e:
+		logger.error(f"Failed to configure SSL for Redis: {e}")
 
-celery_app.conf.update(celery_conf)
+try:
+	celery_app.conf.update(celery_conf)
+	logger.info("Celery configuration updated successfully")
+except Exception as e:
+	logger.error(f"Failed to update Celery configuration: {e}")
+	raise
 
 
 @celery_app.task(bind=True, max_retries=3)
