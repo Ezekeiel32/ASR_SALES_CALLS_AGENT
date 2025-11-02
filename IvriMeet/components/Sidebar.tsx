@@ -41,6 +41,7 @@ const NavItem = ({ icon, label, page, currentPage, onNavigate }: any) => {
 };
 
 const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isMobile = false, isOpen = false, onClose }) => {
+  const { user } = useAuth();
   const sidebarStyles = isMobile 
     ? { ...sidebarStyle, ...mobileSidebarStyle, transform: isOpen ? 'translateX(0)' : 'translateX(100%)' }
     : sidebarStyle;
@@ -64,10 +65,10 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isMobile = f
             <NavItem icon={<SettingsIcon width={22} height={22}/>} label="הגדרות" page="settings" currentPage={currentPage} onNavigate={onNavigate} />
         </div>
         <div style={{ display: 'flex', alignItems: 'center' }}>
-              <img src={`https://i.pravatar.cc/150?u=user`} alt="User Avatar" style={{ width: 40, height: 40, borderRadius: '50%', marginLeft: '1rem', border: '2px solid rgba(255, 255, 255, 0.3)' }} />
+              <img src={`https://i.pravatar.cc/150?u=${user?.email || 'user'}`} alt="User Avatar" style={{ width: 40, height: 40, borderRadius: '50%', marginLeft: '1rem', border: '2px solid rgba(255, 255, 255, 0.3)' }} />
             <div>
-                  <p style={{ margin: 0, fontWeight: 600, fontSize: '0.9rem', color: '#FFFFFF' }}>יעל לוי</p>
-                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'rgba(255, 255, 255, 0.8)' }}>yael@example.com</p>
+                  <p style={{ margin: 0, fontWeight: 600, fontSize: '0.9rem', color: '#FFFFFF' }}>{user?.name || user?.email || 'משתמש'}</p>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'rgba(255, 255, 255, 0.8)' }}>{user?.email || ''}</p>
               </div>
             </div>
         </div>

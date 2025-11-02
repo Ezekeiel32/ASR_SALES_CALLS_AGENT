@@ -8,8 +8,10 @@ import SpeakersPage from './components/SpeakersPage';
 import SettingsPage from './components/SettingsPage';
 import LiveMeetingPage from './components/LiveMeetingPage';
 import UploadModal from './components/UploadModal';
+import LoginModal from './components/LoginModal';
 import { Meeting, Speaker, MeetingStatus, apiMeetingToUIMeeting } from './types';
 import apiClient from './services/api';
+import { useAuth } from './contexts/AuthContext';
 
 const pageVariants = {
   initial: { opacity: 0, y: 20 },
@@ -24,15 +26,26 @@ const pageTransition = {
 };
 
 const App: React.FC = () => {
+  const { isAuthenticated, isLoading: authLoading, user, token } = useAuth();
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
   const [isUploadModalOpen, setUploadModalOpen] = useState(false);
+  const [isLoginModalOpen, setLoginModalOpen] = useState(false);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [speakers, setSpeakers] = useState<Speaker[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isMobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+
+  // Update API client token when auth changes
+  useEffect(() => {
+    if (token) {
+      apiClient.setToken(token);
+    } else {
+      apiClient.setToken(null);
+    }
+  }, [token]);
 
   // Detect mobile on mount and resize
   useEffect(() => {
@@ -44,8 +57,17 @@ const App: React.FC = () => {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Load meetings from backend
+  // Show login modal if not authenticated
   useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      setLoginModalOpen(true);
+    }
+  }, [authLoading, isAuthenticated]);
+
+  // Load meetings from backend (only when authenticated)
+  useEffect(() => {
+    if (!isAuthenticated || authLoading) return;
+
     // Initial load with retry logic
     const initialLoad = async () => {
       let retries = 0;
@@ -60,6 +82,10 @@ const App: React.FC = () => {
           retries++;
           if (retries >= maxRetries) {
             console.error('Failed to load meetings after all retries:', err);
+            // If auth error, show login modal
+            if (err instanceof Error && (err.message.includes('401') || err.message.includes('Not authenticated') || err.message.includes('422'))) {
+              setLoginModalOpen(true);
+            }
             break;
           }
           console.debug(`Initial load attempt ${retries} failed, retrying in ${retryDelay}ms...`);
@@ -247,6 +273,7 @@ const App: React.FC = () => {
         </div>
       </main>
       <UploadModal isOpen={isUploadModalOpen} onClose={() => setUploadModalOpen(false)} onSuccess={handleUploadSuccess} />
+      <LoginModal isOpen={isLoginModalOpen} onClose={() => {}} />
     </div>
   );
 };

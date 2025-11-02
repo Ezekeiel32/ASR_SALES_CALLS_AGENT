@@ -60,9 +60,22 @@ export interface MeetingListResponse {
 
 class ApiClient {
   private baseUrl: string;
+  private token: string | null = null;
 
   constructor(baseUrl: string = API_BASE_URL) {
     this.baseUrl = baseUrl;
+    // Load token from localStorage if available
+    if (typeof window !== 'undefined') {
+      this.token = localStorage.getItem('auth_token');
+    }
+  }
+
+  setToken(token: string | null) {
+    this.token = token;
+  }
+
+  getToken(): string | null {
+    return this.token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
   }
 
   private async request<T>(
@@ -78,18 +91,37 @@ class ApiClient {
       const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
       
       try {
-        const response = await fetch(url, {
-          ...options,
-          signal: controller.signal,
-          headers: {
-            'Content-Type': 'application/json',
-            ...options.headers,
-          },
-        });
+      // Add Authorization header if token is available
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      };
+
+      const token = this.getToken();
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+        headers,
+      });
 
         clearTimeout(timeoutId);
 
         if (!response.ok) {
+          // Handle 401/403 auth errors
+          if (response.status === 401 || response.status === 403) {
+            // Clear token if it's invalid
+            if (typeof window !== 'undefined') {
+              localStorage.removeItem('auth_token');
+              localStorage.removeItem('auth_user');
+            }
+            this.token = null;
+            throw new Error('Not authenticated. Please login again.');
+          }
+          
           const error = await response.text();
           throw new Error(`API error: ${response.status} - ${error}`);
         }
@@ -248,6 +280,12 @@ class ApiClient {
       // Open and send request
       xhr.open('POST', `${this.baseUrl}/meetings/upload`);
       xhr.withCredentials = true; // Include credentials for CORS
+      
+      // Add Authorization header if token is available
+      const token = this.getToken();
+      if (token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      }
       
       // Don't set Content-Type header - browser will set it automatically with boundary for FormData
       xhr.send(formData);

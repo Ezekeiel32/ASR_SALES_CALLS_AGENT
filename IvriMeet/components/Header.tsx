@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from '../contexts/AuthContext';
 import { SearchIcon, BellIcon, ChevronDownIcon, LogoutIcon, SettingsIcon, PlusIcon } from './IconComponents';
 
 interface HeaderProps {
@@ -9,7 +10,13 @@ interface HeaderProps {
 }
 
 const Header: React.FC<HeaderProps> = ({ onNewMeetingClick, onMenuClick, isMobile = false }) => {
+  const { user, logout } = useAuth();
   const [isDropdownOpen, setDropdownOpen] = useState(false);
+  
+  const handleLogout = () => {
+    logout();
+    setDropdownOpen(false);
+  };
 
   return (
     <header style={isMobile ? mobileHeaderStyle : headerStyle}>
@@ -64,11 +71,11 @@ const Header: React.FC<HeaderProps> = ({ onNewMeetingClick, onMenuClick, isMobil
         {/* User Dropdown - Compact on mobile */}
         <div style={{ position: 'relative' }}>
           <div style={isMobile ? mobileUserMenuContainerStyle : userMenuContainerStyle} onClick={() => setDropdownOpen(!isDropdownOpen)}>
-            <img src={`https://i.pravatar.cc/150?u=user`} alt="User Avatar" style={{ width: isMobile ? 36 : 40, height: isMobile ? 36 : 40, borderRadius: '50%' }} />
-            {!isMobile && (
+            <img src={`https://i.pravatar.cc/150?u=${user?.email || 'user'}`} alt="User Avatar" style={{ width: isMobile ? 36 : 40, height: isMobile ? 36 : 40, borderRadius: '50%' }} />
+            {!isMobile && user && (
               <div style={{ marginRight: '0.75rem', textAlign: 'right' }}>
-                  <p style={{ margin: 0, fontWeight: 600, fontSize: '0.9rem' }}>יעל לוי</p>
-                  <p style={{ margin: 0, fontSize: '0.8rem', color: '#718096' }}>מנהלת</p>
+                  <p style={{ margin: 0, fontWeight: 600, fontSize: '0.9rem' }}>{user.name || user.email}</p>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: '#718096' }}>{user.email}</p>
               </div>
             )}
             {!isMobile && (
@@ -85,8 +92,8 @@ const Header: React.FC<HeaderProps> = ({ onNewMeetingClick, onMenuClick, isMobil
                 transition={{ duration: 0.2 }}
                 style={dropdownStyle}
               >
-                <button style={dropdownItemStyle}><SettingsIcon width={18} height={18} style={{marginLeft: '0.5rem'}}/> הגדרות</button>
-                <button style={dropdownItemStyle}><LogoutIcon width={18} height={18} style={{marginLeft: '0.5rem'}}/> התנתקות</button>
+                <button style={dropdownItemStyle} onClick={() => { setDropdownOpen(false); }}><SettingsIcon width={18} height={18} style={{marginLeft: '0.5rem'}}/> הגדרות</button>
+                <button style={dropdownItemStyle} onClick={handleLogout}><LogoutIcon width={18} height={18} style={{marginLeft: '0.5rem'}}/> התנתקות</button>
               </motion.div>
             )}
           </AnimatePresence>
