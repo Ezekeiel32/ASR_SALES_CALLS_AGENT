@@ -67,82 +67,117 @@ class ApiClient {
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    retries: number = 2
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
+    const timeoutDuration = 30 * 1000; // 30 seconds timeout
     
-    // Add timeout for regular requests (30 seconds)
-    const timeoutDuration = 30 * 1000;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
-    
-    try {
-      const response = await fetch(url, {
-        ...options,
-        signal: controller.signal,
-        headers: {
-          'Content-Type': 'application/json',
-          ...options.headers,
-        },
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`API error: ${response.status} - ${error}`);
-      }
-
-      return response.json();
-    } catch (error) {
-      clearTimeout(timeoutId);
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
       
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw new Error('Request timeout: The server took too long to respond. Please try again.');
-      }
-      
-      if (error instanceof TypeError) {
-        if (error.message.includes('Failed to fetch') || error.message.includes('ERR_TIMED_OUT')) {
-          throw new Error('Network error: Could not connect to server. Please check if the backend is running.');
+      try {
+        const response = await fetch(url, {
+          ...options,
+          signal: controller.signal,
+          headers: {
+            'Content-Type': 'application/json',
+            ...options.headers,
+          },
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const error = await response.text();
+          throw new Error(`API error: ${response.status} - ${error}`);
         }
+
+        return response.json();
+      } catch (error) {
+        clearTimeout(timeoutId);
+        
+        const isLastAttempt = attempt === retries;
+        const isAbortError = error instanceof Error && error.name === 'AbortError';
+        const isNetworkError = error instanceof TypeError && 
+          (error.message.includes('Failed to fetch') || error.message.includes('ERR_TIMED_OUT'));
+        
+        if (isLastAttempt) {
+          if (isAbortError) {
+            throw new Error('Request timeout: The server took too long to respond. Please try again.');
+          }
+          if (isNetworkError) {
+            throw new Error('Network error: Could not connect to server. Please check if the backend is running.');
+          }
+          throw error;
+        }
+        
+        // Wait before retry (exponential backoff: 1s, 2s)
+        await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
+        console.debug(`Request attempt ${attempt + 1} failed, retrying...`, endpoint);
       }
-      
-      throw error;
     }
+    
+    throw new Error('Request failed after all retries');
   }
 
-  // Health check with shorter timeout
-  async healthCheck(): Promise<{ status: string }> {
+  // Health check with retry logic for cold starts
+  async healthCheck(retries: number = 3, delay: number = 2000): Promise<{ status: string }> {
     const url = `${this.baseUrl}/healthz`;
-    const timeoutDuration = 10 * 1000; // 10 seconds for health check
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
+    const timeoutDuration = 15 * 1000; // 15 seconds for health check (longer for cold starts)
     
-    try {
-      const response = await fetch(url, {
-        method: 'GET',
-        signal: controller.signal,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
+    for (let attempt = 0; attempt < retries; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
+      
+      try {
+        const response = await fetch(url, {
+          method: 'GET',
+          signal: controller.signal,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
 
-      clearTimeout(timeoutId);
+        clearTimeout(timeoutId);
 
-      if (!response.ok) {
+        if (response.ok) {
+          return response.json();
+        }
+        
+        // If not OK but got response, throw error (don't retry for 4xx errors)
+        if (response.status >= 400 && response.status < 500) {
+          throw new Error(`Health check failed: ${response.status}`);
+        }
+        
+        // For 5xx or network errors, fall through to retry logic
         throw new Error(`Health check failed: ${response.status}`);
+      } catch (error) {
+        clearTimeout(timeoutId);
+        
+        const isLastAttempt = attempt === retries - 1;
+        const isAbortError = error instanceof Error && error.name === 'AbortError';
+        const isNetworkError = error instanceof TypeError && 
+          (error.message.includes('Failed to fetch') || error.message.includes('ERR_TIMED_OUT'));
+        
+        if (isLastAttempt) {
+          if (isAbortError) {
+            throw new Error('Health check timeout: Backend may be sleeping or unreachable.');
+          }
+          if (isNetworkError) {
+            throw new Error('Network error: Could not connect to server. Please check if the backend is running.');
+          }
+          throw error;
+        }
+        
+        // Wait before retry (exponential backoff: 2s, 4s, 8s)
+        await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, attempt)));
+        console.debug(`Health check attempt ${attempt + 1} failed, retrying...`);
       }
-
-      return response.json();
-    } catch (error) {
-      clearTimeout(timeoutId);
-      
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw new Error('Health check timeout: Backend may be sleeping or unreachable.');
-      }
-      
-      throw error;
     }
+    
+    throw new Error('Health check failed after all retries');
   }
 
   // Upload meeting audio file with real-time progress tracking

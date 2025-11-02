@@ -66,12 +66,14 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose, onSuccess })
       setUploadSuccess(false);
 
       // Check backend health before upload (only on first attempt)
+      // Use retries to handle cold starts
       if (retryCount === 0) {
         try {
-          await apiClient.healthCheck();
+          await apiClient.healthCheck(3, 2000); // 3 retries, 2 second delay
         } catch (healthErr) {
           console.warn('Health check failed, but continuing with upload:', healthErr);
           // Continue anyway - sometimes health check fails but upload works
+          // The upload itself will retry if it fails
         }
       }
 

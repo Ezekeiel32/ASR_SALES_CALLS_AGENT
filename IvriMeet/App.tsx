@@ -46,7 +46,29 @@ const App: React.FC = () => {
 
   // Load meetings from backend
   useEffect(() => {
-    loadMeetings();
+    // Initial load with retry logic
+    const initialLoad = async () => {
+      let retries = 0;
+      const maxRetries = 5;
+      const retryDelay = 3000; // 3 seconds between retries
+      
+      while (retries < maxRetries) {
+        try {
+          await loadMeetings();
+          break; // Success, exit retry loop
+        } catch (err) {
+          retries++;
+          if (retries >= maxRetries) {
+            console.error('Failed to load meetings after all retries:', err);
+            break;
+          }
+          console.debug(`Initial load attempt ${retries} failed, retrying in ${retryDelay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+        }
+      }
+    };
+    
+    initialLoad();
     
     // Listen for custom event to open upload modal from empty state
     const handleOpenModal = () => {
@@ -58,7 +80,7 @@ const App: React.FC = () => {
     // This ensures backend stays awake even if scaling.min isn't respected
     const keepaliveInterval = setInterval(async () => {
       try {
-        await apiClient.healthCheck();
+        await apiClient.healthCheck(1, 1000); // Single retry, 1 second delay for keepalive
       } catch (e) {
         // Silently ignore errors - just keeping the instance alive
         console.debug('Keepalive ping failed (backend may be sleeping):', e);
