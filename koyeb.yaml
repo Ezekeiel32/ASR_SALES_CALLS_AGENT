@@ -19,12 +19,13 @@ services:
 
   - name: worker
     type: worker
-    dockerfile: Dockerfile
+    dockerfile: Dockerfile.worker
     env:
       - name: PYTHONUNBUFFERED
         value: "1"
-    command: celery -A agent_service.services.processing_queue.celery_app worker --loglevel=info --concurrency=2
     scaling:
       min: 1
       max: 2
+    # No health check needed - workers are not HTTP services
+    # Command is in Dockerfile.worker CMD
 
