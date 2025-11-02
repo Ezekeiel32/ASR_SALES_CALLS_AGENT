@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import httpx
-from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import Body, Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -214,14 +214,12 @@ async def login(
 
 @app.get("/auth/me")
 async def get_current_user(
-	authorization: str | None = None,
+	authorization: str = Header(..., alias="Authorization"),
 	db: Session = Depends(get_db),
 ) -> TokenResponse:
 	"""
 	Get current authenticated user info from JWT token.
 	"""
-	from fastapi import Header
-	
 	if not authorization:
 		raise HTTPException(status_code=401, detail="Not authenticated")
 	
