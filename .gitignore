@@ -16,3 +16,5 @@ Thumbs.db
 # Outputs
 agent_service/agent_out/
 agent_out/
+*.mp3
+*.wav
