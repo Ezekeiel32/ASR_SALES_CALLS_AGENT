@@ -31,6 +31,8 @@ If you redeploy from GitHub, Koyeb should detect both services:
    ```
    celery -A agent_service.services.processing_queue.celery_app worker --loglevel=info --concurrency=2
    ```
+   
+   **Note:** The security warning about running as root is common in Docker containers. In Koyeb's isolated containers, this is typically not a concern, but you can suppress it by adding `--uid=nobody --gid=nogroup` if those users exist in your container.
 
 5. **Environment Variables:**
    - Copy ALL environment variables from your API service:

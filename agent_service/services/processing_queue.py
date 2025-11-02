@@ -4,11 +4,13 @@ import logging
 import os
 import uuid
 from typing import Any
+from urllib.parse import urlparse
 
 from celery import Celery
 from sqlalchemy.orm import Session
 
 import asyncio
+import ssl
 
 from agent_service.config import get_settings
 from agent_service.database.connection import get_db_session
@@ -17,8 +19,21 @@ from agent_service.services.orchestrator import ProcessingOrchestrator
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# Get Redis URL from environment (Railway provides REDIS_URL automatically)
+# Get Redis URL from environment (Railway/Koyeb provides REDIS_URL automatically)
 redis_url = settings.redis_url or os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
+# Parse Redis URL to determine if SSL is needed
+redis_parsed = urlparse(redis_url)
+is_ssl = redis_parsed.scheme == "rediss" or redis_url.startswith("rediss://")
+
+# For secure Redis (rediss://), we need to configure SSL properly
+# Upstash and other Redis services use TLS but don't require client certificates
+if is_ssl:
+	logger.info("Detected secure Redis connection (rediss://), configuring SSL...")
+	# Ensure URL has ssl_cert_reqs parameter (required by Celery)
+	if "ssl_cert_reqs" not in redis_url:
+		separator = "&" if "?" in redis_url else "?"
+		redis_url = f"{redis_url}{separator}ssl_cert_reqs=CERT_NONE"
 
 # Initialize Celery app
 celery_app = Celery(
@@ -27,13 +42,35 @@ celery_app = Celery(
 	backend=redis_url,
 )
 
-celery_app.conf.update(
-	task_serializer="json",
-	accept_content=["json"],
-	result_serializer="json",
-	timezone="UTC",
-	enable_utc=True,
-)
+# Configure Celery with SSL settings for Redis if needed
+celery_conf = {
+	"task_serializer": "json",
+	"accept_content": ["json"],
+	"result_serializer": "json",
+	"timezone": "UTC",
+	"enable_utc": True,
+}
+
+# Add Redis SSL configuration if using rediss://
+# This is required for Upstash Redis and other TLS-enabled Redis services
+if is_ssl:
+	celery_conf.update({
+		"broker_use_ssl": {
+			"ssl_cert_reqs": ssl.CERT_NONE,  # CERT_NONE for Redis services without client certs
+			"ssl_ca_certs": None,
+			"ssl_certfile": None,
+			"ssl_keyfile": None,
+		},
+		"redis_backend_use_ssl": {
+			"ssl_cert_reqs": ssl.CERT_NONE,
+			"ssl_ca_certs": None,
+			"ssl_certfile": None,
+			"ssl_keyfile": None,
+		},
+	})
+	logger.info("Celery SSL configuration applied for Redis broker and backend")
+
+celery_app.conf.update(celery_conf)
 
 
 @celery_app.task(bind=True, max_retries=3)
