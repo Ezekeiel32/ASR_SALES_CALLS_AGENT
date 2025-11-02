@@ -18,7 +18,14 @@ from sqlalchemy.orm import Session
 
 from agent_service.config import get_settings
 from agent_service.database import get_db
-from agent_service.database.models import Meeting, Organization, Speaker
+from agent_service.database.models import Meeting, Organization, Speaker, User
+from agent_service.database.seed_data import get_or_create_default_organization
+from agent_service.auth import (
+	verify_password,
+	get_password_hash,
+	create_access_token,
+	decode_access_token,
+)
 from agent_service.service import AgentService
 from agent_service.services import NameSuggestionService, SpeakerService
 from agent_service.services.processing_queue import enqueue_meeting_processing, get_processing_status

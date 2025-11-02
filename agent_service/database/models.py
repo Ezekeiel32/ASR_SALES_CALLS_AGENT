@@ -65,6 +65,7 @@ class User(Base):
 	)
 	email: Mapped[str] = mapped_column(VARCHAR(255), unique=True, nullable=False)
 	name: Mapped[str | None] = mapped_column(VARCHAR(255), nullable=True)
+	password_hash: Mapped[str | None] = mapped_column(VARCHAR(255), nullable=True)
 	sso_provider: Mapped[str | None] = mapped_column(VARCHAR(50), nullable=True)
 	created_at: Mapped[datetime] = mapped_column(
 		TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc)
