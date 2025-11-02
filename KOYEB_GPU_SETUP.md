@@ -13,15 +13,22 @@ You're deploying with:
 ### 1. Switch Builder to Docker
 In the Koyeb dashboard, change from "Buildpack" to **"Docker"** so it uses your `Dockerfile`.
 
-### 2. Environment Variables (Before Deploy)
+### 2. Create PostgreSQL & Redis First!
+
+**Create these BEFORE adding environment variables:**
+
+1. **PostgreSQL**: Databases → Create Database → PostgreSQL → Copy connection string
+2. **Redis**: Databases → Create Database → Redis → Copy connection string
+
+### 3. Environment Variables (After Creating Databases)
 
 Go to "Environment variables" section and add:
 
 ```bash
-# Database (from Koyeb PostgreSQL - create this first!)
+# Database (from Koyeb PostgreSQL you just created)
 DATABASE_URL=postgresql://user:pass@host:port/db
 
-# Redis (from Koyeb Redis - create this first!)
+# Redis (from Koyeb Redis you just created)
 REDIS_URL=redis://host:port
 
 # CORS (for Netlify frontend)
@@ -49,19 +56,28 @@ CUDA_VISIBLE_DEVICES=0
 PORT=8000
 ```
 
-### 3. Create PostgreSQL & Redis First
+### 3. Create PostgreSQL & Redis in Koyeb (Do This First!)
 
 **Before deploying your app:**
 
-1. **PostgreSQL**:
-   - Go to "Databases" → Create PostgreSQL
-   - Copy the `DATABASE_URL` connection string
-   - Add to environment variables
+1. **Create PostgreSQL in Koyeb:**
+   - Go to "Databases" → "Create Database"
+   - Select **PostgreSQL**
+   - Choose plan (start with free/cheapest)
+   - Wait for it to provision
+   - Go to database settings → Copy the **Connection String** or **DATABASE_URL**
+   - It looks like: `postgresql://user:password@host:port/dbname`
 
-2. **Redis**:
-   - Go to "Databases" → Create Redis
-   - Copy the `REDIS_URL` connection string
-   - Add to environment variables
+2. **Create Redis in Koyeb:**
+   - Go to "Databases" → "Create Database"  
+   - Select **Redis**
+   - Choose plan
+   - Copy the **REDIS_URL** connection string
+
+3. **Add to Environment Variables:**
+   - In your app deployment, add:
+     - `DATABASE_URL=<the_postgres_url_you_copied>`
+     - `REDIS_URL=<the_redis_url_you_copied>`
 
 ### 4. Health Check Configuration
 

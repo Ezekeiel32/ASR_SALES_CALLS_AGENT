@@ -9,21 +9,21 @@ Koyeb is a serverless platform that automatically handles Docker, scaling, and H
 2. Sign up/login with GitHub
 3. Get $5.50 free credit/month!
 
-### 2. Create PostgreSQL Database
+### 2. Create PostgreSQL Database in Koyeb
 
-In Koyeb Dashboard:
 1. Go to "Databases" → "Create Database"
 2. Select **PostgreSQL**
-3. Choose plan (Free tier available)
-4. Copy the connection string (looks like: `postgresql://user:pass@host:port/db`)
+3. Choose plan (Free tier or Starter)
+4. Wait for provisioning (~1-2 minutes)
+5. Click on the database → **Copy the Connection String** (looks like `postgresql://user:pass@host:port/db`)
+6. Save this - you'll need it for `DATABASE_URL` environment variable
 
-### 3. Create Redis Instance
+### 3. Create Redis in Koyeb
 
-In Koyeb Dashboard:
 1. Go to "Databases" → "Create Database"
 2. Select **Redis**
 3. Choose plan
-4. Copy the connection URL (looks like: `redis://host:port`)
+4. Copy the **REDIS_URL** connection string
 
 ### 4. Deploy Your App
 
@@ -42,10 +42,10 @@ In Koyeb Dashboard:
 In your Koyeb App → Settings → Environment Variables:
 
 ```bash
-# Database (from PostgreSQL service)
+# Database (from Koyeb PostgreSQL you created above)
 DATABASE_URL=postgresql://user:pass@host:port/db
 
-# Redis (from Redis service)
+# Redis (from Koyeb Redis you created above)
 REDIS_URL=redis://host:port
 
 # CORS (for Netlify frontend)
