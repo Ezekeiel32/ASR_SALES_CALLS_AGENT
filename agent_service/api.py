@@ -25,6 +25,7 @@ from agent_service.auth import (
 	create_access_token,
 	decode_access_token,
 )
+from agent_service.dependencies import get_current_user, get_current_organization
 from agent_service.service import AgentService
 from agent_service.services import NameSuggestionService, SpeakerService
 from agent_service.services.processing_queue import enqueue_meeting_processing, get_processing_status
@@ -429,11 +430,13 @@ async def analyze(req: AnalyzeRequest) -> JSONResponse:
 async def upload_meeting(
 	file: UploadFile = File(...),
 	title: str = Form(""),
-	organization_id: str = Form(...),
+	current_user: User = Depends(get_current_user),
+	organization: Organization = Depends(get_current_organization),
 	db: Session = Depends(get_db),
 ) -> JSONResponse:
 	"""
 	Upload a new audio file for processing.
+	Requires authentication - uses organization from logged-in user.
 	Creates a meeting record and triggers async processing.
 	"""
 	import boto3
@@ -445,17 +448,8 @@ async def upload_meeting(
 
 	try:
 		settings = get_settings()
-		try:
-			org_id = uuid.UUID(organization_id)
-		except ValueError:
-			raise HTTPException(
-				status_code=400, detail=f"Invalid organization_id format: {organization_id}. Expected UUID format."
-			)
-
-		# Verify organization exists
-		org = db.get(Organization, org_id)
-		if not org:
-			raise HTTPException(status_code=404, detail=f"Organization {organization_id} not found")
+		# Use organization from authenticated user
+		org_id = organization.id
 
 		# Save audio to S3 or local storage
 		audio_s3_key = None
