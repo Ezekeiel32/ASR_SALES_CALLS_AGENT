@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
+import { useAuth } from '../contexts/AuthContext';
 import { HomeIcon, UsersIcon, MicIcon, SettingsIcon } from './IconComponents';
 
 interface SidebarProps {
