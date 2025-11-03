@@ -7,7 +7,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+# Note: We use bcrypt directly instead of passlib to avoid initialization errors
+# from passlib.context import CryptContext  # Not used anymore
 
 from agent_service.config import get_settings
 
