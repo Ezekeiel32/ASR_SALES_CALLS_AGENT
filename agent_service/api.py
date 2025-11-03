@@ -132,6 +132,62 @@ app.add_middleware(
     max_age=3600,  # Cache preflight requests for 1 hour
 )
 
+# Exception handlers to ensure CORS headers are always sent, even on errors
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.requests import Request
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+	"""Ensure CORS headers are included in error responses."""
+	response = JSONResponse(
+		status_code=exc.status_code,
+		content={"detail": exc.detail},
+	)
+	# Add CORS headers manually
+	origin = request.headers.get("origin")
+	if origin and origin in get_cors_origins():
+		response.headers["Access-Control-Allow-Origin"] = origin
+		response.headers["Access-Control-Allow-Credentials"] = "true"
+		response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+		response.headers["Access-Control-Allow-Headers"] = "*"
+	return response
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+	"""Ensure CORS headers are included in validation error responses."""
+	response = JSONResponse(
+		status_code=422,
+		content={"detail": exc.errors()},
+	)
+	# Add CORS headers manually
+	origin = request.headers.get("origin")
+	if origin and origin in get_cors_origins():
+		response.headers["Access-Control-Allow-Origin"] = origin
+		response.headers["Access-Control-Allow-Credentials"] = "true"
+		response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+		response.headers["Access-Control-Allow-Headers"] = "*"
+	return response
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+	"""Ensure CORS headers are included in all error responses."""
+	import logging
+	logger = logging.getLogger(__name__)
+	logger.error(f"Unhandled exception: {exc}", exc_info=True)
+	response = JSONResponse(
+		status_code=500,
+		content={"detail": "Internal server error"},
+	)
+	# Add CORS headers manually
+	origin = request.headers.get("origin")
+	if origin and origin in get_cors_origins():
+		response.headers["Access-Control-Allow-Origin"] = origin
+		response.headers["Access-Control-Allow-Credentials"] = "true"
+		response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+		response.headers["Access-Control-Allow-Headers"] = "*"
+	return response
+
 settings = get_settings()
 service = AgentService(settings)
 
