@@ -14,16 +14,8 @@ from agent_service.config import get_settings
 settings = get_settings()
 
 # Password hashing context
-# Initialize with lazy backend loading to avoid bcrypt initialization errors
-# We'll use bcrypt directly for long passwords to avoid passlib's bug detection issues
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-# Force backend to load immediately with a simple password to avoid initialization issues
-try:
-	# Trigger backend loading with a short test password
-	test_hash = pwd_context.hash("test")
-except Exception:
-	# If initialization fails, we'll handle it in the actual hash functions
-	pass
+# Note: We're using bcrypt directly in our functions to avoid passlib initialization issues
+# with newer bcrypt versions. This avoids AttributeError during passlib's bcrypt backend detection.
 
 # JWT settings
 # Get secret from environment or generate a default (NOT secure for production!)
