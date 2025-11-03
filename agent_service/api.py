@@ -28,7 +28,14 @@ from agent_service.auth import (
 from agent_service.dependencies import get_current_user, get_current_organization
 from agent_service.service import AgentService
 from agent_service.services import NameSuggestionService, SpeakerService
-from agent_service.services.processing_queue import enqueue_meeting_processing, get_processing_status
+# Choose processing backend: Celery (Redis) or RunPod Serverless
+# Set USE_RUNPOD=true to use RunPod, otherwise uses Celery
+USE_RUNPOD = os.getenv("USE_RUNPOD", "false").lower() == "true"
+
+if USE_RUNPOD:
+    from agent_service.services.runpod_client import enqueue_meeting_processing, get_processing_status
+else:
+    from agent_service.services.processing_queue import enqueue_meeting_processing, get_processing_status
 from agent_service.services.s3_model_storage import configure_huggingface_cache_for_s3
 
 # Configure HuggingFace to use minimal local cache (models will be in S3)
