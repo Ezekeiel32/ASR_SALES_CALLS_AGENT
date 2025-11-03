@@ -36,6 +36,63 @@ configure_huggingface_cache_for_s3()
 
 app = FastAPI(title="Hebrew Medical Sales Call Agent", version="0.1.0")
 
+# Exception handler to ensure CORS headers are always sent, even on errors
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+	"""Ensure CORS headers are included in error responses."""
+	response = JSONResponse(
+		status_code=exc.status_code,
+		content={"detail": exc.detail},
+	)
+	# Add CORS headers manually
+	origin = request.headers.get("origin")
+	if origin and origin in get_cors_origins():
+		response.headers["Access-Control-Allow-Origin"] = origin
+		response.headers["Access-Control-Allow-Credentials"] = "true"
+		response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+		response.headers["Access-Control-Allow-Headers"] = "*"
+	return response
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+	"""Ensure CORS headers are included in validation error responses."""
+	response = JSONResponse(
+		status_code=422,
+		content={"detail": exc.errors()},
+	)
+	# Add CORS headers manually
+	origin = request.headers.get("origin")
+	if origin and origin in get_cors_origins():
+		response.headers["Access-Control-Allow-Origin"] = origin
+		response.headers["Access-Control-Allow-Credentials"] = "true"
+		response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+		response.headers["Access-Control-Allow-Headers"] = "*"
+	return response
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+	"""Ensure CORS headers are included in all error responses."""
+	import logging
+	logger = logging.getLogger(__name__)
+	logger.error(f"Unhandled exception: {exc}", exc_info=True)
+	response = JSONResponse(
+		status_code=500,
+		content={"detail": "Internal server error"},
+	)
+	# Add CORS headers manually
+	origin = request.headers.get("origin")
+	if origin and origin in get_cors_origins():
+		response.headers["Access-Control-Allow-Origin"] = origin
+		response.headers["Access-Control-Allow-Credentials"] = "true"
+		response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+		response.headers["Access-Control-Allow-Headers"] = "*"
+	return response
+
 # Configure CORS
 def get_cors_origins() -> list[str]:
 	"""Get CORS origins from settings or use defaults."""
@@ -130,47 +187,60 @@ async def register(
 	Creates a new organization if organization_name is provided,
 	otherwise assigns to default organization.
 	"""
-	# Check if user already exists
-	existing_user = db.query(User).filter(User.email == request.email).first()
-	if existing_user:
-		raise HTTPException(status_code=400, detail="Email already registered")
-	
-	# Create organization (required)
-	if not request.organization_name:
-		raise HTTPException(status_code=400, detail="organization_name is required for registration")
-	
-	# Create new organization
-	org = Organization(
-		name=request.organization_name,
-		subscription_plan="free",
-	)
-	db.add(org)
-	db.flush()  # Get org ID
-	
-	# Create user
-	user = User(
-		organization_id=org.id,
-		email=request.email,
-		name=request.name,
-		password_hash=get_password_hash(request.password),
-	)
-	db.add(user)
-	db.commit()
-	db.refresh(user)
-	
-	# Create access token
-	access_token = create_access_token(
-		data={"sub": str(user.id), "org_id": str(org.id), "email": user.email}
-	)
-	
-	return TokenResponse(
-		access_token=access_token,
-		token_type="bearer",
-		user_id=str(user.id),
-		organization_id=str(org.id),
-		email=user.email,
-		name=user.name,
-	)
+	try:
+		# Validate password length (bcrypt limit is 72 bytes, but we'll allow longer by pre-hashing)
+		if len(request.password) == 0:
+			raise HTTPException(status_code=400, detail="Password cannot be empty")
+		
+		# Check if user already exists
+		existing_user = db.query(User).filter(User.email == request.email).first()
+		if existing_user:
+			raise HTTPException(status_code=400, detail="Email already registered")
+		
+		# Create organization (required)
+		if not request.organization_name:
+			raise HTTPException(status_code=400, detail="organization_name is required for registration")
+		
+		# Create new organization
+		org = Organization(
+			name=request.organization_name,
+			subscription_plan="free",
+		)
+		db.add(org)
+		db.flush()  # Get org ID
+		
+		# Create user
+		user = User(
+			organization_id=org.id,
+			email=request.email,
+			name=request.name,
+			password_hash=get_password_hash(request.password),
+		)
+		db.add(user)
+		db.commit()
+		db.refresh(user)
+		
+		# Create access token
+		access_token = create_access_token(
+			data={"sub": str(user.id), "org_id": str(org.id), "email": user.email}
+		)
+		
+		return TokenResponse(
+			access_token=access_token,
+			token_type="bearer",
+			user_id=str(user.id),
+			organization_id=str(org.id),
+			email=user.email,
+			name=user.name,
+		)
+	except HTTPException:
+		# Re-raise HTTP exceptions (they already have proper status codes)
+		raise
+	except Exception as e:
+		import logging
+		logger = logging.getLogger(__name__)
+		logger.error(f"Registration error: {e}", exc_info=True)
+		raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
 
 
 @app.post("/auth/login", response_model=TokenResponse)

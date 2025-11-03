@@ -30,12 +30,34 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-	"""Verify a plain password against a hashed password."""
-	return pwd_context.verify(plain_password, hashed_password)
+	"""
+	Verify a plain password against a hashed password.
+	Handles both regular passwords and pre-hashed passwords (for >72 bytes).
+	"""
+	# Try direct verification first
+	if pwd_context.verify(plain_password, hashed_password):
+		return True
+	
+	# If password is >72 bytes, try pre-hashing with SHA256
+	if len(plain_password.encode('utf-8')) > 72:
+		import hashlib
+		pre_hashed = hashlib.sha256(plain_password.encode('utf-8')).hexdigest()
+		return pwd_context.verify(pre_hashed, hashed_password)
+	
+	return False
 
 
 def get_password_hash(password: str) -> str:
-	"""Hash a plain password."""
+	"""
+	Hash a plain password.
+	Bcrypt has a 72-byte limit, so we pre-hash long passwords with SHA256.
+	"""
+	# Bcrypt has a 72-byte limit, so for longer passwords we pre-hash them
+	# This is a common pattern to support longer passwords
+	if len(password.encode('utf-8')) > 72:
+		import hashlib
+		# Pre-hash with SHA256 to get a fixed 32-byte hash
+		password = hashlib.sha256(password.encode('utf-8')).hexdigest()
 	return pwd_context.hash(password)
 
 
