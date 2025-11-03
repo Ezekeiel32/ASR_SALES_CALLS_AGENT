@@ -32,7 +32,13 @@ const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
       // Success - token is stored, component will re-render
       onClose?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'שגיאה בהתחברות');
+      const errorMessage = err instanceof Error ? err.message : 'שגיאה בהתחברות';
+      // Translate common timeout errors to Hebrew
+      if (errorMessage.includes('timeout') || errorMessage.includes('TIMED_OUT') || errorMessage.includes('Failed to fetch')) {
+        setError('השרת מתעורר, נסה שוב בעוד כמה שניות...');
+      } else {
+        setError(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -181,7 +187,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
                 cursor: loading ? 'not-allowed' : 'pointer',
               }}
             >
-              {loading ? 'מעבד...' : isSignup ? 'הרשמה' : 'התחברות'}
+              {loading ? (isSignup ? 'מתחבר לשרת ומרשם...' : 'מתחבר לשרת...') : isSignup ? 'הרשמה' : 'התחברות'}
             </button>
           </form>
         </motion.div>

@@ -61,6 +61,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       baseUrl = `https://${baseUrl}`;
     }
 
+    // Wake up backend with health check first (only on first attempt)
+    try {
+      const healthController = new AbortController();
+      const healthTimeout = setTimeout(() => healthController.abort(), 30000); // 30s for health check
+      await fetch(`${baseUrl}/healthz`, { 
+        method: 'GET',
+        signal: healthController.signal,
+      }).catch(() => {
+        // Ignore health check errors - backend might be waking up
+      });
+      clearTimeout(healthTimeout);
+      // Small delay to let backend fully wake up
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    } catch {
+      // Continue anyway - health check is optional
+    }
+
     // Retry logic for cold starts (up to 3 attempts with exponential backoff)
     let lastError: Error | null = null;
     let timeoutId: NodeJS.Timeout | null = null;
@@ -128,6 +145,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     let baseUrl = API_BASE_URL;
     if (baseUrl && !baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
       baseUrl = `https://${baseUrl}`;
+    }
+
+    // Wake up backend with health check first (only on first attempt)
+    try {
+      const healthController = new AbortController();
+      const healthTimeout = setTimeout(() => healthController.abort(), 30000); // 30s for health check
+      await fetch(`${baseUrl}/healthz`, { 
+        method: 'GET',
+        signal: healthController.signal,
+      }).catch(() => {
+        // Ignore health check errors - backend might be waking up
+      });
+      clearTimeout(healthTimeout);
+      // Small delay to let backend fully wake up
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    } catch {
+      // Continue anyway - health check is optional
     }
 
     // Retry logic for cold starts (up to 3 attempts with exponential backoff)
