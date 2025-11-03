@@ -82,26 +82,54 @@
 
 ## 🎯 My Recommendation
 
-### For **100% Free**: Use Render
+### ⚠️ **Render is TOO SLOW for ML Workloads!**
 
-**Why:**
-- ✅ Free tier (512MB RAM, 0.1 CPU)
-- ✅ Great Docker support
-- ✅ Auto-deploys from GitHub
-- ✅ Free PostgreSQL/Redis (though you have Supabase/Upstash)
-- ✅ No credit card required
-- ✅ Can stay awake with keepalive ping
+**Performance Reality:**
+- **CPU Diarization**: 30-60 seconds for 30min audio ❌
+- **GPU Diarization**: 5-10 seconds for 30min audio ✅
+- **6-12x slower on CPU** - Not acceptable for user experience!
 
-**Trade-offs:**
-- ❌ No GPU (CPU processing will be slower - 30-60s for diarization vs 5-10s on GPU)
-- ❌ Small resources (may need to optimize memory usage)
-- ❌ Sleeps after 15min idle (but keepalive ping fixes this)
+### 🏆 **Best Option: Optimize Current Koyeb Setup** ⭐ RECOMMENDED
 
-**Setup:**
-1. Deploy to Render (connects to GitHub automatically)
-2. Use your existing Supabase PostgreSQL
-3. Use your existing Upstash Redis
-4. Models process on CPU (slower but free)
+**Current Issue**: You're paying $375/month for 24/7 GPU, but only need GPU during processing.
+
+**Solution: Smart Scaling Strategy**
+
+1. **API Service → Standard CPU Instance**:
+   - Handles HTTP requests (no GPU needed)
+   - Cost: ~$15-30/month (always-on)
+   - Fast responses, no GPU waste
+
+2. **Worker Service → GPU Instance with Auto-Scaling**:
+   - Scales to **0 instances when idle** = $0/hour
+   - Scales to **1 instance when processing** = $0.50/hour
+   - If processing 50 hours/month = **$25/month**
+   - **Total: ~$40-55/month** (vs $375/month!)
+
+**Performance**: Same as current (5-10s processing) ✅
+**Cost**: 85-90% savings! 💰
+
+### Alternative: RunPod GPU (Pay-As-You-Use)
+
+**RunPod Pricing:**
+- RTX 4000 GPU: $0.29/hour
+- 30GB VRAM, 8 vCPU, 30GB RAM
+- Only pay when processing
+- **50 hours/month = $14.50/month** 🚀
+
+**Pros:**
+- ✅ Cheaper than Koyeb GPU
+- ✅ Same performance
+- ✅ True pay-per-use
+
+**Cons:**
+- ❌ More setup (need to configure worker to call RunPod API)
+- ❌ Slightly more complex architecture
+
+**Best Setup:**
+- API: Render free tier (always-on, handles requests)
+- Worker: RunPod GPU (scale 0→1 when processing)
+- **Total: ~$15/month for processing** 🎉
 
 ### For **Best Performance + Low Cost**: Render API + Koyeb GPU Worker
 
