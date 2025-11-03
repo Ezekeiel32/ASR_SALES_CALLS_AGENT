@@ -14,7 +14,16 @@ from agent_service.config import get_settings
 settings = get_settings()
 
 # Password hashing context
+# Initialize with lazy backend loading to avoid bcrypt initialization errors
+# We'll use bcrypt directly for long passwords to avoid passlib's bug detection issues
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Force backend to load immediately with a simple password to avoid initialization issues
+try:
+	# Trigger backend loading with a short test password
+	test_hash = pwd_context.hash("test")
+except Exception:
+	# If initialization fails, we'll handle it in the actual hash functions
+	pass
 
 # JWT settings
 # Get secret from environment or generate a default (NOT secure for production!)
@@ -33,16 +42,28 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 	"""
 	Verify a plain password against a hashed password.
 	Handles both regular passwords and pre-hashed passwords (for >72 bytes).
+	Uses bcrypt directly to avoid passlib initialization issues.
 	"""
+	import bcrypt as bcrypt_lib
+	
+	password_bytes = plain_password.encode('utf-8')
+	hashed_bytes = hashed_password.encode('utf-8')
+	
 	# Try direct verification first
-	if pwd_context.verify(plain_password, hashed_password):
-		return True
+	try:
+		if bcrypt_lib.checkpw(password_bytes, hashed_bytes):
+			return True
+	except Exception:
+		pass
 	
 	# If password is >72 bytes, try pre-hashing with SHA256
-	if len(plain_password.encode('utf-8')) > 72:
+	if len(password_bytes) > 72:
 		import hashlib
-		pre_hashed = hashlib.sha256(plain_password.encode('utf-8')).hexdigest()
-		return pwd_context.verify(pre_hashed, hashed_password)
+		pre_hashed = hashlib.sha256(password_bytes).digest()  # 32 bytes raw digest
+		try:
+			return bcrypt_lib.checkpw(pre_hashed, hashed_bytes)
+		except Exception:
+			pass
 	
 	return False
 
@@ -51,14 +72,26 @@ def get_password_hash(password: str) -> str:
 	"""
 	Hash a plain password.
 	Bcrypt has a 72-byte limit, so we pre-hash long passwords with SHA256.
+	Uses bcrypt directly to avoid passlib initialization issues.
 	"""
+	import bcrypt as bcrypt_lib
+	
 	# Bcrypt has a 72-byte limit, so for longer passwords we pre-hash them
 	# This is a common pattern to support longer passwords
-	if len(password.encode('utf-8')) > 72:
+	password_bytes = password.encode('utf-8')
+	if len(password_bytes) > 72:
 		import hashlib
-		# Pre-hash with SHA256 to get a fixed 32-byte hash
-		password = hashlib.sha256(password.encode('utf-8')).hexdigest()
-	return pwd_context.hash(password)
+		# Pre-hash with SHA256 to get a fixed 64-byte hex string (32 bytes when decoded)
+		# But hexdigest is 64 chars, so we need to encode it as bytes
+		pre_hashed = hashlib.sha256(password_bytes).hexdigest().encode('utf-8')
+		# SHA256 hexdigest is 64 bytes, still > 72 bytes when encoded, so use raw digest
+		pre_hashed = hashlib.sha256(password_bytes).digest()  # 32 bytes
+		hashed = bcrypt_lib.hashpw(pre_hashed, bcrypt_lib.gensalt())
+		return hashed.decode('utf-8')
+	else:
+		# Use bcrypt directly for short passwords
+		hashed = bcrypt_lib.hashpw(password_bytes, bcrypt_lib.gensalt())
+		return hashed.decode('utf-8')
 
 
 def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = None) -> str:
