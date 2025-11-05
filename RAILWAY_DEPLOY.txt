@@ -1,0 +1,35 @@
+RAILWAY DEPLOYMENT - FastAPI Backend
+
+1. CREATE ACCOUNT
+   - Go to https://railway.app
+   - Sign up with GitHub (free, no credit card)
+
+2. DEPLOY
+   - Click "New Project"
+   - Select "Deploy from GitHub repo"
+   - Choose "ASR_SALES_CALLS_AGENT" repository
+   - Railway auto-detects Python and deploys
+
+3. ADD ENVIRONMENT VARIABLES
+   Click "Variables" tab and add:
+   
+   DATABASE_URL=postgresql://user:password@ep-xxx.aws.neon.tech/ivrimeet_db?sslmode=require
+   RUNPOD_ENDPOINT_ID=ep-xxxxx
+   RUNPOD_API_KEY=your_runpod_api_key
+   RUNPOD_SERVERLESS_URL=https://your-endpoint.runpod.io
+   IVRIT_API_KEY=your_ivrit_api_key
+LLM_API_KEY=your_deepseek_api_key
+   JWT_SECRET_KEY=your_secret_min_32_chars
+   USE_RUNPOD=true
+   CORS_ORIGINS=https://your-app.netlify.app
+   ENVIRONMENT=production
+
+4. GET YOUR URL
+   - After deployment, copy the Railway URL
+   - Format: https://your-app.up.railway.app
+   - Use this as VITE_API_BASE_URL in Netlify
+
+5. DONE
+   Backend is live and auto-deploys on git push
+
+COST: $0/month (free tier: 500 hours)
