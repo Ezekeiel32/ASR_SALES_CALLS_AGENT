@@ -1,9 +1,20 @@
 // API Client for IvriMeet Backend
+// Force localhost for development
 let API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
-// Ensure URL has protocol
+// Override if it's pointing to Koyeb or production
+if (API_BASE_URL.includes('koyeb') || API_BASE_URL.includes('netlify') || API_BASE_URL.includes('production')) {
+  API_BASE_URL = 'http://localhost:8000';
+}
+
+// Ensure URL has protocol (but don't force https for localhost)
 if (API_BASE_URL && !API_BASE_URL.startsWith('http://') && !API_BASE_URL.startsWith('https://')) {
-  API_BASE_URL = `https://${API_BASE_URL}`;
+  // Only add https if it's not localhost
+  if (API_BASE_URL.includes('localhost') || API_BASE_URL.includes('127.0.0.1')) {
+    API_BASE_URL = `http://${API_BASE_URL}`;
+  } else {
+    API_BASE_URL = `https://${API_BASE_URL}`;
+  }
 }
 
 export interface Meeting {
@@ -53,6 +64,28 @@ export interface UploadMeetingResponse {
   message: string;
 }
 
+export interface CommunicationHealthScores {
+  clarity: { overall: number; per_speaker?: Record<string, number>; reasoning: string };
+  completeness: { overall: number; reasoning: string };
+  correctness: { overall: number; reasoning: string };
+  courtesy: { overall: number; per_speaker?: Record<string, number>; reasoning: string };
+  audience: { overall: number; reasoning: string };
+  timeliness: { overall: number; reasoning: string };
+}
+
+export interface AggregatedHealth {
+  overall: number;
+  dimensions: Record<string, number>;
+  per_speaker?: Record<string, number>;
+  total_speakers?: number;
+}
+
+export interface MeetingCommunicationHealth {
+  aggregated_health: AggregatedHealth;
+  health_explanation: string;
+  communication_health_scores: CommunicationHealthScores;
+}
+
 export interface MeetingListResponse {
   meetings: Meeting[];
   total: number;
@@ -76,6 +109,19 @@ class ApiClient {
 
   getToken(): string | null {
     return this.token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+  }
+
+  // Gmail OAuth methods
+  async initiateGmailOAuth(): Promise<{ authorization_url: string; state: string }> {
+    return this.request<{ authorization_url: string; state: string }>('/auth/gmail/initiate', {
+      method: 'GET',
+    });
+  }
+
+  async getGmailStatus(): Promise<{ connected: boolean; gmail_email?: string | null; connected_at?: string | null; error?: string }> {
+    return this.request<{ connected: boolean; gmail_email?: string | null; connected_at?: string | null; error?: string }>('/auth/gmail/status', {
+      method: 'GET',
+    });
   }
 
   private async request<T>(
@@ -443,6 +489,143 @@ class ApiClient {
     }
 
     return response.json();
+  }
+
+  // XG Agent methods
+
+  // Analyze retail data (CSV/Excel)
+  async analyzeRetailData(file: File): Promise<{
+    summary: string;
+    analysis_results: {
+      model_performance: {
+        rmse: number;
+        mae: number;
+        r2_score: number;
+        mse: number;
+      };
+      feature_importances: Record<string, number>;
+      visualizations: Record<string, any>;
+      data_statistics: Record<string, any>;
+    };
+    data_exploration?: {
+      descriptive_stats?: Record<string, any>;
+      correlation_matrix?: Record<string, any>;
+      outlier_analysis?: Record<string, any>;
+      distributions?: Record<string, any>;
+      total_records?: number;
+      numeric_features?: string[];
+    };
+    validation_results?: {
+      valid: boolean;
+      quality_score: number;
+      missing_columns?: string[];
+      available_columns?: string[];
+      data_shape?: number[];
+      missing_value_percentage?: number;
+      total_records?: number;
+    };
+    engineered_features?: {
+      new_features?: string[];
+      total_features?: number;
+    };
+    workflow_id: string | null;
+  }> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${this.baseUrl}/analyze/retail`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'Authorization': `Bearer ${this.getToken()}`,
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Retail analysis failed: ${response.status} - ${error}`);
+    }
+
+    return response.json();
+  }
+
+  // Analyze emails from Gmail
+  async analyzeEmails(): Promise<{
+    emails_count: number;
+    analysis_count: number;
+    drafts_count: number;
+    email_summary: string;
+    email_analysis_results: AggregatedHealth;
+    email_visualizations: Record<string, any>;
+    communication_health_scores?: CommunicationHealthScores;
+    workflow_id: string | null;
+  }> {
+    return this.request<{
+      emails_count: number;
+      analysis_count: number;
+      drafts_count: number;
+      email_summary: string;
+      email_analysis_results: Record<string, any>;
+      email_visualizations: Record<string, any>;
+      workflow_id: string | null;
+    }>('/analyze/emails', {
+      method: 'POST',
+    });
+  }
+
+  // Run workflow (retail, email, or meeting)
+  async runWorkflow(
+    mode: 'retail' | 'email' | 'meeting',
+    meetingId?: string,
+    data?: Record<string, any>
+  ): Promise<{
+    workflow_id: string;
+    mode: string;
+    status: string;
+    result: Record<string, any> | null;
+  }> {
+    const body: {
+      mode: string;
+      meeting_id?: string;
+      data?: Record<string, any>;
+    } = { mode };
+
+    if (meetingId) {
+      body.meeting_id = meetingId;
+    }
+    if (data) {
+      body.data = data;
+    }
+
+    return this.request<{
+      workflow_id: string;
+      mode: string;
+      status: string;
+      result: Record<string, any> | null;
+    }>('/workflows/' + mode, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  // Get workflow status
+  async getWorkflowStatus(workflowId: string): Promise<{
+    workflow_id: string;
+    mode: string;
+    status: string;
+    result: Record<string, any> | null;
+  }> {
+    return this.request<{
+      workflow_id: string;
+      mode: string;
+      status: string;
+      result: Record<string, any> | null;
+    }>(`/workflows/${workflowId}/status`);
+  }
+
+  // Get meeting communication health
+  async getMeetingCommunicationHealth(meetingId: string): Promise<MeetingCommunicationHealth> {
+    return this.request<MeetingCommunicationHealth>(`/meetings/${meetingId}/communication_health`);
   }
 }
 

@@ -42,10 +42,11 @@ class Settings(BaseSettings):
 	nvidia_stream: bool = Field(default=False)
 
 	# Database
-	# Railway uses DATABASE_URL, but we keep database_url for backward compatibility
+	# Supports Neon, Railway, or any PostgreSQL via DATABASE_URL
 	database_url: str = Field(
 		default="postgresql://postgres:postgres@localhost:5432/hebrew_meetings",
-		validation_alias="DATABASE_URL",  # Railway sets this automatically
+		validation_alias="DATABASE_URL",  # Neon/Railway/Koyeb sets this automatically
+		description="PostgreSQL connection string (Neon format: postgresql://user:pass@host.neon.tech/dbname?sslmode=require)"
 	)
 	
 	# Redis (for Celery)
@@ -75,7 +76,20 @@ class Settings(BaseSettings):
 	request_timeout_seconds: float = Field(default=120)
 	log_level: str = Field(default="INFO")
 
-	model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False)
+	# XG Agent (LangGraph/XGBoost)
+	gmail_credentials_path: str | None = Field(default=None, description="Path to Gmail OAuth credentials JSON file (for OAuth client config only)")
+	gmail_client_id: str | None = Field(default=None, description="Gmail OAuth client ID (from Google Cloud Console)")
+	gmail_client_secret: str | None = Field(default=None, description="Gmail OAuth client secret (from Google Cloud Console)")
+	gmail_redirect_uri: str | None = Field(default=None, description="Gmail OAuth redirect URI (auto-detected if not set)")
+	xgboost_n_estimators: int = Field(default=100, description="Number of XGBoost estimators")
+	xgboost_learning_rate: float = Field(default=0.1, description="XGBoost learning rate")
+	xgboost_max_depth: int = Field(default=3, description="XGBoost max depth")
+	xgboost_random_state: int = Field(default=42, description="XGBoost random state")
+
+	# LangSmith (optional - for LangGraph Studio tracing)
+	langsmith_api_key: str | None = Field(default=None, description="LangSmith API key for tracing and debugging")
+
+	model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore")
 
 
 @lru_cache(maxsize=1)

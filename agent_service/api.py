@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from agent_service.config import get_settings
 from agent_service.database import get_db
-from agent_service.database.models import Meeting, Organization, Speaker, User
+from agent_service.database.models import Meeting, Organization, Speaker, User, UserGmailCredentials
 from agent_service.auth import (
 	verify_password,
 	get_password_hash,
@@ -29,9 +29,13 @@ from agent_service.auth import (
 from agent_service.dependencies import get_current_user, get_current_organization
 from agent_service.service import AgentService
 from agent_service.services import NameSuggestionService, SpeakerService
+from google_auth_oauthlib.flow import Flow
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
+from langchain_core.prompts import ChatPromptTemplate
 # Choose processing backend: Celery (Redis) or RunPod Serverless
-# Set USE_RUNPOD=true to use RunPod, otherwise uses Celery
-USE_RUNPOD = os.getenv("USE_RUNPOD", "false").lower() == "true"
+# Default to RunPod Serverless for production
+USE_RUNPOD = os.getenv("USE_RUNPOD", "true").lower() == "true"
 
 if USE_RUNPOD:
     from agent_service.services.runpod_client import enqueue_meeting_processing, get_processing_status
@@ -110,8 +114,12 @@ def get_cors_origins() -> list[str]:
 	# Default development origins
 	default_origins = [
 		"http://localhost:3000",
+		"http://localhost:3001",
+		"http://localhost:3002",
 		"http://localhost:5173",
 		"http://127.0.0.1:3000",
+		"http://127.0.0.1:3001",
+		"http://127.0.0.1:3002",
 		"http://127.0.0.1:5173",
 	]
 	
@@ -366,6 +374,376 @@ async def get_me(
 		email=current_user.email,
 		name=current_user.name,
 	)
+
+
+# ---- Gmail OAuth Endpoints ----
+
+@app.get("/auth/gmail/initiate")
+async def initiate_gmail_oauth(
+	current_user: User = Depends(get_current_user),
+) -> JSONResponse:
+	"""
+	Initiate Gmail OAuth flow.
+	Returns authorization URL for user to visit.
+	"""
+	settings = get_settings()
+	
+	# Check if OAuth client credentials are configured
+	if not settings.gmail_client_id or not settings.gmail_client_secret:
+		# Try to load from credentials.json file if available
+		if settings.gmail_credentials_path and os.path.exists(settings.gmail_credentials_path):
+			import json
+			with open(settings.gmail_credentials_path, 'r') as f:
+				creds_data = json.load(f)
+			if 'web' in creds_data:
+				client_id = creds_data['web']['client_id']
+				client_secret = creds_data['web']['client_secret']
+			elif 'installed' in creds_data:
+				client_id = creds_data['installed']['client_id']
+				client_secret = creds_data['installed']['client_secret']
+			else:
+				raise HTTPException(
+					status_code=500,
+					detail="Gmail OAuth credentials not configured. Please set GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET in .env or provide credentials.json"
+				)
+		else:
+			raise HTTPException(
+				status_code=500,
+				detail="Gmail OAuth credentials not configured. Please set GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET in .env or provide credentials.json"
+			)
+	else:
+		client_id = settings.gmail_client_id
+		client_secret = settings.gmail_client_secret
+	
+	# Gmail API scopes
+	SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
+	
+	# Determine redirect URI - use from settings or auto-detect from request
+	redirect_uri = settings.gmail_redirect_uri
+	if not redirect_uri:
+		# Auto-detect based on environment
+		import os
+		from fastapi import Request as FastAPIRequest
+		# Try to get from request (if available in context)
+		# For now, use environment variable or default
+		backend_url = os.getenv("BACKEND_URL") or os.getenv("RAILWAY_PUBLIC_DOMAIN") or os.getenv("KOYEB_SERVICE_URL")
+		if backend_url:
+			# Ensure https for production
+			if not backend_url.startswith("http"):
+				backend_url = f"https://{backend_url}"
+			redirect_uri = f"{backend_url}/auth/gmail/callback"
+		else:
+			# Default to localhost for development
+			redirect_uri = "http://localhost:8000/auth/gmail/callback"
+	
+	# Create OAuth flow for web application
+	client_config = {
+		"web": {
+			"client_id": client_id,
+			"client_secret": client_secret,
+			"auth_uri": "https://accounts.google.com/o/oauth2/auth",
+			"token_uri": "https://oauth2.googleapis.com/token",
+			"redirect_uris": [redirect_uri]
+		}
+	}
+	
+	flow = Flow.from_client_config(
+		client_config,
+		scopes=SCOPES,
+		redirect_uri=redirect_uri
+	)
+	
+	# Generate authorization URL with state (user_id) for security
+	# Encode user_id in state parameter so callback can identify user
+	import base64
+	user_state = base64.urlsafe_b64encode(f"{current_user.id}".encode()).decode().rstrip('=')
+	
+	authorization_url, flow_state = flow.authorization_url(
+		access_type='offline',
+		include_granted_scopes='true',
+		prompt='consent',  # Force consent screen to get refresh token
+		state=user_state  # Include user_id in state
+	)
+	
+	logger = logging.getLogger(__name__)
+	logger.info(f"Gmail OAuth initiated for user {current_user.id}")
+	
+	return JSONResponse({
+		"authorization_url": authorization_url,
+		"state": user_state  # Return state for frontend
+	})
+
+
+@app.get("/auth/gmail/callback")
+async def gmail_oauth_callback(
+	code: str,
+	state: str | None = None,
+	db: Session = Depends(get_db),
+) -> JSONResponse:
+	"""
+	Handle Gmail OAuth callback.
+	Exchanges authorization code for tokens and stores them in database.
+	"""
+	settings = get_settings()
+	
+	# Decode user_id from state parameter
+	if not state:
+		raise HTTPException(status_code=400, detail="Missing state parameter")
+	
+	try:
+		import base64
+		# Add padding if needed
+		padding = 4 - len(state) % 4
+		if padding != 4:
+			state += '=' * padding
+		user_id_str = base64.urlsafe_b64decode(state).decode()
+		user_id = uuid.UUID(user_id_str)
+	except Exception as e:
+		logger = logging.getLogger(__name__)
+		logger.error(f"Failed to decode state parameter: {e}")
+		raise HTTPException(status_code=400, detail="Invalid state parameter")
+	
+	# Get user from database
+	user = db.get(User, user_id)
+	if not user:
+		raise HTTPException(status_code=404, detail="User not found")
+	
+	# Get OAuth client credentials
+	if not settings.gmail_client_id or not settings.gmail_client_secret:
+		if settings.gmail_credentials_path and os.path.exists(settings.gmail_credentials_path):
+			import json
+			with open(settings.gmail_credentials_path, 'r') as f:
+				creds_data = json.load(f)
+			if 'web' in creds_data:
+				client_id = creds_data['web']['client_id']
+				client_secret = creds_data['web']['client_secret']
+			elif 'installed' in creds_data:
+				client_id = creds_data['installed']['client_id']
+				client_secret = creds_data['installed']['client_secret']
+			else:
+				raise HTTPException(status_code=500, detail="Gmail OAuth credentials not configured")
+		else:
+			raise HTTPException(status_code=500, detail="Gmail OAuth credentials not configured")
+	else:
+		client_id = settings.gmail_client_id
+		client_secret = settings.gmail_client_secret
+	
+	SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
+	
+	# Determine redirect URI - must match the one used in initiate
+	redirect_uri = settings.gmail_redirect_uri
+	if not redirect_uri:
+		import os
+		backend_url = os.getenv("BACKEND_URL") or os.getenv("RAILWAY_PUBLIC_DOMAIN") or os.getenv("KOYEB_SERVICE_URL")
+		if backend_url:
+			if not backend_url.startswith("http"):
+				backend_url = f"https://{backend_url}"
+			redirect_uri = f"{backend_url}/auth/gmail/callback"
+		else:
+			redirect_uri = "http://localhost:8000/auth/gmail/callback"
+	
+	# Create OAuth flow
+	client_config = {
+		"web": {
+			"client_id": client_id,
+			"client_secret": client_secret,
+			"auth_uri": "https://accounts.google.com/o/oauth2/auth",
+			"token_uri": "https://oauth2.googleapis.com/token",
+			"redirect_uris": [redirect_uri]
+		}
+	}
+	
+	flow = Flow.from_client_config(
+		client_config,
+		scopes=SCOPES,
+		redirect_uri=redirect_uri
+	)
+	
+	try:
+		# Exchange authorization code for credentials
+		flow.fetch_token(code=code, state=state)
+		creds = flow.credentials
+		
+		# Get user's Gmail email address
+		from googleapiclient.discovery import build
+		gmail_service = build('gmail', 'v1', credentials=creds)
+		profile = gmail_service.users().getProfile(userId='me').execute()
+		gmail_email = profile.get('emailAddress', None)
+		
+		# Store credentials in database
+		# Check if credentials already exist for this user
+		existing_creds = db.query(UserGmailCredentials).filter(
+			UserGmailCredentials.user_id == user.id
+		).first()
+		
+		if existing_creds:
+			# Update existing credentials
+			existing_creds.token_json = creds.to_json()
+			existing_creds.gmail_email = gmail_email
+			existing_creds.updated_at = datetime.now(timezone.utc)
+			db.commit()
+			logger = logging.getLogger(__name__)
+			logger.info(f"Updated Gmail credentials for user {user.id}")
+		else:
+			# Create new credentials record
+			new_creds = UserGmailCredentials(
+				user_id=user.id,
+				token_json=creds.to_json(),
+				gmail_email=gmail_email
+			)
+			db.add(new_creds)
+			db.commit()
+			logger = logging.getLogger(__name__)
+			logger.info(f"Stored Gmail credentials for user {user.id}, email: {gmail_email}")
+		
+		# Get frontend URL from request origin or environment
+		# Try to detect from Referer header or Origin header
+		frontend_url = "http://localhost:3002"  # Default for development
+		
+		try:
+			# Check Referer header (where the request came from)
+			referer = request.headers.get("referer", "")
+			if "ivreetmeet.netlify.app" in referer:
+				frontend_url = "https://ivreetmeet.netlify.app"
+			elif "localhost" in referer or "127.0.0.1" in referer:
+				# Extract port from referer if available
+				import re
+				port_match = re.search(r':(\d+)', referer)
+				if port_match:
+					port = port_match.group(1)
+					frontend_url = f"http://localhost:{port}"
+				else:
+					frontend_url = "http://localhost:3002"
+			
+			# Also check Origin header
+			origin = request.headers.get("origin", "")
+			if "ivreetmeet.netlify.app" in origin:
+				frontend_url = "https://ivreetmeet.netlify.app"
+			
+			# Fallback to environment check
+			import os
+			if not frontend_url or frontend_url == "http://localhost:3002":
+				if os.getenv("ENVIRONMENT") == "production" or os.getenv("NETLIFY") == "true":
+					frontend_url = "https://ivreetmeet.netlify.app"
+				elif settings.cors_origins and "ivreetmeet.netlify.app" in settings.cors_origins:
+					frontend_url = "https://ivreetmeet.netlify.app"
+		except Exception as e:
+			logger = logging.getLogger(__name__)
+			logger.debug(f"Could not determine frontend URL from request: {e}")
+			# Keep default
+		
+		# Return HTML page that closes window and notifies parent
+		# Frontend will handle the redirect
+		html_content = f"""
+		<!DOCTYPE html>
+		<html>
+		<head>
+			<title>Gmail Connected</title>
+			<style>
+				body {{
+					font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+					display: flex;
+					flex-direction: column;
+					align-items: center;
+					justify-content: center;
+					height: 100vh;
+					margin: 0;
+					background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+					color: white;
+					text-align: center;
+					padding: 2rem;
+				}}
+				h1 {{
+					font-size: 2rem;
+					margin-bottom: 1rem;
+				}}
+				p {{
+					font-size: 1.1rem;
+					opacity: 0.9;
+				}}
+				.checkmark {{
+					font-size: 4rem;
+					margin-bottom: 1rem;
+				}}
+			</style>
+		</head>
+		<body>
+			<div class="checkmark">✓</div>
+			<h1>Gmail Connected Successfully!</h1>
+			<p>You can close this window.</p>
+			<script>
+				// Notify parent window
+				if (window.opener) {{
+					window.opener.postMessage({{ type: 'gmail_connected', email: '{gmail_email}' }}, '*');
+					setTimeout(() => window.close(), 2000);
+				}} else {{
+					// If not opened in popup, redirect to frontend
+					window.location.href = '{frontend_url}/analytics?tab=email&gmail_connected=true';
+				}}
+			</script>
+		</body>
+		</html>
+		"""
+		from fastapi.responses import HTMLResponse
+		return HTMLResponse(content=html_content)
+		
+	except Exception as e:
+		logger = logging.getLogger(__name__)
+		logger.error(f"Gmail OAuth callback failed: {e}", exc_info=True)
+		raise HTTPException(
+			status_code=500,
+			detail=f"Failed to complete Gmail OAuth: {str(e)}"
+		)
+
+
+@app.get("/auth/gmail/status")
+async def get_gmail_status(
+	current_user: User = Depends(get_current_user),
+	db: Session = Depends(get_db),
+) -> JSONResponse:
+	"""
+	Check if user has Gmail connected.
+	Returns connection status and Gmail email if connected.
+	"""
+	gmail_creds = db.query(UserGmailCredentials).filter(
+		UserGmailCredentials.user_id == current_user.id
+	).first()
+	
+	if not gmail_creds:
+		return JSONResponse({
+			"connected": False,
+			"gmail_email": None
+		})
+	
+	# Verify credentials are still valid
+	try:
+		creds = Credentials.from_authorized_user_info(
+			json.loads(gmail_creds.token_json),
+			scopes=['https://www.googleapis.com/auth/gmail.readonly']
+		)
+		
+		# Refresh token if expired
+		if creds.expired and creds.refresh_token:
+			creds.refresh(Request())
+			# Update stored credentials
+			gmail_creds.token_json = creds.to_json()
+			gmail_creds.updated_at = datetime.now(timezone.utc)
+			db.commit()
+		
+		return JSONResponse({
+			"connected": True,
+			"gmail_email": gmail_creds.gmail_email,
+			"connected_at": gmail_creds.created_at.isoformat() if gmail_creds.created_at else None
+		})
+	except Exception as e:
+		logger = logging.getLogger(__name__)
+		logger.error(f"Failed to verify Gmail credentials: {e}", exc_info=True)
+		# Credentials are invalid, mark as disconnected
+		return JSONResponse({
+			"connected": False,
+			"gmail_email": None,
+			"error": "Credentials expired or invalid. Please reconnect."
+		})
 
 
 # ---- Power Automate friendly endpoints ----
@@ -933,6 +1311,99 @@ async def get_meeting_summary(
 	)
 
 
+@app.get("/meetings/{meeting_id}/communication_health")
+async def get_meeting_communication_health(
+	meeting_id: str,
+	current_user: User = Depends(get_current_user),
+	db: Session = Depends(get_db),
+) -> JSONResponse:
+	"""
+	Get communication health analysis for a meeting.
+	If not already run, triggers the workflow automatically.
+	Requires authentication.
+	"""
+	meeting_uuid = uuid.UUID(meeting_id)
+	meeting = db.get(Meeting, meeting_uuid)
+	if not meeting:
+		raise HTTPException(status_code=404, detail="Meeting not found")
+	
+	# Verify meeting belongs to user's organization
+	if meeting.organization_id != current_user.organization_id:
+		raise HTTPException(status_code=403, detail="Meeting does not belong to your organization")
+	
+	# For now, trigger the workflow if called (in future, could store results in DB)
+	# Run the meeting workflow to get communication health
+	from agent_service.xg_agent.asr_workflow import get_asr_workflow
+	from agent_service.database.models import TranscriptionSegment
+	
+	segments = db.query(TranscriptionSegment).filter(
+		TranscriptionSegment.meeting_id == meeting_uuid
+	).order_by(TranscriptionSegment.start_time_seconds).all()
+	
+	if not segments:
+		raise HTTPException(status_code=404, detail="Meeting transcript not found")
+	
+	# Build merged_segments
+	merged_segments = []
+	speaker_labels = []
+	
+	for seg in segments:
+		if seg.speaker_id:
+			from agent_service.database.models import Speaker
+			speaker = db.get(Speaker, seg.speaker_id)
+			speaker_label = speaker.name if speaker and speaker.name else f"SPK_{seg.speaker_id}"
+		else:
+			speaker_label = seg.unidentified_speaker_label or f"SPK_UNKNOWN"
+		
+		if speaker_label not in speaker_labels:
+			speaker_labels.append(speaker_label)
+		
+		merged_segments.append({
+			"speaker": speaker_label,
+			"text": seg.hebrew_text,
+			"start": float(seg.start_time_seconds) if seg.start_time_seconds else 0.0,
+			"end": float(seg.end_time_seconds) if seg.end_time_seconds else 0.0,
+		})
+	
+	# Run ASR workflow to get communication health
+	asr_workflow = get_asr_workflow()
+	
+	initial_state = {
+		"meeting_id": meeting_id,
+		"organization_id": str(meeting.organization_id),
+		"merged_segments": merged_segments,
+		"speaker_labels": speaker_labels,
+		"transcription_result": None,
+		"ivrit_segments": [],
+		"pyannote_segments": None,
+		"speaker_segments": [],
+		"speaker_snippets": [],
+		"speaker_voiceprints": {},
+		"matched_speakers": {},
+		"name_suggestions": [],
+		"summary": None,
+		"key_points": [],
+		"action_items": [],
+		"preprocessed_transcript": None,
+		"communication_health_scores": {},
+		"aggregated_health": {},
+		"health_explanation": None,
+		"status": "ready",
+		"error": None,
+	}
+	
+	final_state = asr_workflow.invoke(initial_state)
+	
+	return JSONResponse(
+		{
+			"meeting_id": meeting_id,
+			"aggregated_health": final_state.get("aggregated_health", {}),
+			"health_explanation": final_state.get("health_explanation", ""),
+			"communication_health_scores": final_state.get("communication_health_scores", {}),
+		}
+	)
+
+
 @app.delete("/meetings/{meeting_id}")
 async def delete_meeting(
 	meeting_id: str,
@@ -1090,4 +1561,397 @@ async def delete_meeting(
 			"message": "Meeting deleted successfully",
 		}
 	)
+
+
+# ---- XG Agent (LangGraph/XGBoost) Endpoints ----
+
+class RetailAnalysisResponse(BaseModel):
+	summary: str
+	analysis_results: dict
+	data_exploration: dict | None = None
+	validation_results: dict | None = None
+	engineered_features: dict | None = None
+	workflow_id: str | None = None
+
+
+class EmailAnalysisResponse(BaseModel):
+	emails_count: int
+	analysis_count: int
+	drafts_count: int
+	email_summary: str
+	email_analysis_results: dict
+	email_visualizations: dict
+	workflow_id: str | None = None
+
+
+class WorkflowRequest(BaseModel):
+	mode: str  # "retail", "email", or "meeting"
+	meeting_id: str | None = None
+	data: dict | None = None
+
+
+class WorkflowResponse(BaseModel):
+	workflow_id: str
+	mode: str
+	status: str
+	result: dict | None = None
+
+
+@app.post("/analyze/retail", response_model=RetailAnalysisResponse)
+async def analyze_retail(
+	file: UploadFile = File(...),
+	current_user: User = Depends(get_current_user),
+) -> RetailAnalysisResponse:
+	"""
+	Analyze retail data (CSV/Excel) using XGBoost.
+	Requires authentication.
+	"""
+	from agent_service.xg_agent.agent import create_agent_workflow
+	from agent_service.xg_agent.data_processing import load_and_preprocess_data
+	import tempfile
+	import os
+	
+	if not (file.filename.endswith(".xlsx") or file.filename.endswith(".xls") or file.filename.endswith(".csv")):
+		raise HTTPException(
+			status_code=400, 
+			detail="Invalid file format. Please upload an Excel (.xlsx/.xls) or CSV (.csv) file."
+		)
+	
+	# Save uploaded file temporarily
+	suffix = file.filename.split(".")[-1] if file.filename else "csv"
+	with tempfile.NamedTemporaryFile(delete=False, suffix=f".{suffix}") as tmp_file:
+		tmp_file.write(await file.read())
+		tmp_path = tmp_file.name
+	
+	try:
+		# Load and preprocess data
+		df = load_and_preprocess_data(tmp_path)
+		
+		# Create and run the agent workflow
+		workflow = create_agent_workflow(mode="retail")
+		app_workflow = workflow.compile()
+		
+		initial_state = {
+			"data": df.to_dict(),
+			"analysis_results": {},
+			"summary": "",
+			"emails": [],
+			"email_analysis": [],
+			"drafts": [],
+			"email_database": {},
+			"email_analysis_results": {},
+			"email_visualizations": {},
+			"email_summary": "",
+			"validation_results": {},
+			"data_exploration": {},
+			"engineered_features": {}
+		}
+		
+		final_state = app_workflow.invoke(initial_state)
+		
+		return RetailAnalysisResponse(
+			summary=final_state["summary"],
+			analysis_results=final_state["analysis_results"],
+			data_exploration=final_state.get("data_exploration"),
+			validation_results=final_state.get("validation_results"),
+			engineered_features=final_state.get("engineered_features"),
+			workflow_id=None  # Could add workflow tracking if needed
+		)
+	finally:
+		# Clean up the temporary file
+		if os.path.exists(tmp_path):
+			os.remove(tmp_path)
+
+
+@app.post("/analyze/emails", response_model=EmailAnalysisResponse)
+async def analyze_emails(
+	current_user: User = Depends(get_current_user),
+) -> EmailAnalysisResponse:
+	"""
+	Analyze emails from Gmail using XG Agent workflow.
+	Requires authentication and Gmail credentials configured.
+	"""
+	from agent_service.xg_agent.agent import create_agent_workflow
+	
+	try:
+		# Create and run the email analysis workflow
+		workflow = create_agent_workflow(mode="email")
+		app_workflow = workflow.compile()
+		
+		initial_state = {
+			"data": {},
+			"analysis_results": {},
+			"summary": "",
+			"emails": [],
+			"email_analysis": [],
+			"drafts": [],
+			"email_database": {},
+			"email_analysis_results": {},
+			"email_visualizations": {},
+			"email_summary": "",
+			"preprocessed_emails": [],
+			"communication_health_scores": {},
+			"aggregated_health": {},
+			"health_explanation": "",
+			"user_id": str(current_user.id)  # Pass user_id for Gmail credentials lookup
+		}
+		
+		final_state = app_workflow.invoke(initial_state)
+		
+		return EmailAnalysisResponse(
+			emails_count=len(final_state["emails"]),
+			analysis_count=len(final_state.get("communication_health_scores", {})),
+			drafts_count=len(final_state.get("drafts", [])),
+			email_summary=final_state.get("health_explanation", final_state.get("email_summary", "")),
+			email_analysis_results=final_state.get("aggregated_health", {}),
+			email_visualizations=final_state.get("email_visualizations", {}),
+			workflow_id=None
+		)
+	except Exception as e:
+		logger = logging.getLogger(__name__)
+		logger.error(f"Email analysis failed: {e}", exc_info=True)
+		raise HTTPException(
+			status_code=500,
+			detail=f"Email analysis failed: {str(e)}. Ensure Gmail credentials are configured."
+		)
+
+
+@app.post("/workflows/retail", response_model=WorkflowResponse)
+async def run_retail_workflow(
+	request: WorkflowRequest,
+	current_user: User = Depends(get_current_user),
+) -> WorkflowResponse:
+	"""
+	Run retail analysis workflow.
+	Requires authentication.
+	"""
+	from agent_service.xg_agent.agent import create_agent_workflow
+	import uuid
+	
+	workflow_id = str(uuid.uuid4())
+	
+	try:
+		workflow = create_agent_workflow(mode="retail")
+		app_workflow = workflow.compile()
+		
+		initial_state = {
+			"data": request.data or {},
+			"analysis_results": {},
+			"summary": "",
+			"emails": [],
+			"email_analysis": [],
+			"drafts": [],
+			"email_database": {},
+			"email_analysis_results": {},
+			"email_visualizations": {},
+			"email_summary": ""
+		}
+		
+		final_state = app_workflow.invoke(initial_state)
+		
+		return WorkflowResponse(
+			workflow_id=workflow_id,
+			mode="retail",
+			status="completed",
+			result={
+				"summary": final_state["summary"],
+				"analysis_results": final_state["analysis_results"]
+			}
+		)
+	except Exception as e:
+		logger = logging.getLogger(__name__)
+		logger.error(f"Retail workflow failed: {e}", exc_info=True)
+		return WorkflowResponse(
+			workflow_id=workflow_id,
+			mode="retail",
+			status="failed",
+			result={"error": str(e)}
+		)
+
+
+@app.post("/workflows/email", response_model=WorkflowResponse)
+async def run_email_workflow(
+	current_user: User = Depends(get_current_user),
+) -> WorkflowResponse:
+	"""
+	Run email analysis workflow.
+	Requires authentication and Gmail credentials.
+	"""
+	from agent_service.xg_agent.agent import create_agent_workflow
+	import uuid
+	
+	workflow_id = str(uuid.uuid4())
+	
+	try:
+		workflow = create_agent_workflow(mode="email")
+		app_workflow = workflow.compile()
+		
+		initial_state = {
+			"data": {},
+			"analysis_results": {},
+			"summary": "",
+			"emails": [],
+			"email_analysis": [],
+			"drafts": [],
+			"email_database": {},
+			"email_analysis_results": {},
+			"email_visualizations": {},
+			"email_summary": "",
+			"preprocessed_emails": [],
+			"communication_health_scores": {},
+			"aggregated_health": {},
+			"health_explanation": "",
+			"user_id": str(current_user.id)  # Pass user_id for Gmail credentials lookup
+		}
+		
+		final_state = app_workflow.invoke(initial_state)
+		
+		return WorkflowResponse(
+			workflow_id=workflow_id,
+			mode="email",
+			status="completed",
+			result={
+				"health_explanation": final_state.get("health_explanation", ""),
+				"aggregated_health": final_state.get("aggregated_health", {}),
+				"communication_health_scores": final_state.get("communication_health_scores", {}),
+				"email_visualizations": final_state.get("email_visualizations", {}),
+				"drafts": final_state.get("drafts", [])
+			}
+		)
+	except Exception as e:
+		logger = logging.getLogger(__name__)
+		logger.error(f"Email workflow failed: {e}", exc_info=True)
+		return WorkflowResponse(
+			workflow_id=workflow_id,
+			mode="email",
+			status="failed",
+			result={"error": str(e)}
+		)
+
+
+@app.post("/workflows/meeting", response_model=WorkflowResponse)
+async def run_meeting_workflow(
+	request: WorkflowRequest,
+	current_user: User = Depends(get_current_user),
+	db: Session = Depends(get_db),
+) -> WorkflowResponse:
+	"""
+	Run meeting analysis workflow using ASR workflow with communication health analysis.
+	Requires authentication.
+	"""
+	from agent_service.xg_agent.asr_workflow import get_asr_workflow
+	import uuid
+	
+	if not request.meeting_id:
+		raise HTTPException(status_code=400, detail="meeting_id is required for meeting workflow")
+	
+	workflow_id = str(uuid.uuid4())
+	
+	try:
+		meeting_uuid = uuid.UUID(request.meeting_id)
+		meeting = db.get(Meeting, meeting_uuid)
+		if not meeting:
+			raise HTTPException(status_code=404, detail="Meeting not found")
+		
+		# Verify meeting belongs to user's organization
+		if meeting.organization_id != current_user.organization_id:
+			raise HTTPException(status_code=403, detail="Meeting does not belong to your organization")
+		
+		# Get meeting transcript segments
+		from agent_service.database.models import TranscriptionSegment
+		segments = db.query(TranscriptionSegment).filter(
+			TranscriptionSegment.meeting_id == meeting_uuid
+		).order_by(TranscriptionSegment.start_time_seconds).all()
+		
+		if not segments:
+			raise HTTPException(status_code=404, detail="Meeting transcript not found")
+		
+		# Build merged_segments for ASR workflow (format: {speaker, text, start, end})
+		merged_segments = []
+		speaker_labels = []
+		
+		for seg in segments:
+			# Use speaker_id if available, otherwise use speaker_label or generate label
+			if seg.speaker_id:
+				# Try to get speaker name from database
+				from agent_service.database.models import Speaker
+				speaker = db.get(Speaker, seg.speaker_id)
+				speaker_label = speaker.name if speaker and speaker.name else f"SPK_{seg.speaker_id}"
+			else:
+				speaker_label = seg.unidentified_speaker_label or f"SPK_UNKNOWN"
+			
+			if speaker_label not in speaker_labels:
+				speaker_labels.append(speaker_label)
+			
+			merged_segments.append({
+				"speaker": speaker_label,
+				"text": seg.hebrew_text,  # Use hebrew_text field from TranscriptionSegment
+				"start": float(seg.start_time_seconds) if seg.start_time_seconds else 0.0,
+				"end": float(seg.end_time_seconds) if seg.end_time_seconds else 0.0,
+			})
+		
+		# Get ASR workflow
+		asr_workflow = get_asr_workflow()
+		
+		# Initialize state for ASR workflow
+		# Skip audio processing nodes and start from summarize (since we already have transcript)
+		# But we need to provide the merged_segments so preprocessing can work
+		initial_state = {
+			"meeting_id": request.meeting_id,
+			"organization_id": str(meeting.organization_id),
+			"merged_segments": merged_segments,
+			"speaker_labels": speaker_labels,
+			"transcription_result": None,
+			"ivrit_segments": [],
+			"pyannote_segments": None,
+			"speaker_segments": [],
+			"speaker_snippets": [],
+			"speaker_voiceprints": {},
+			"matched_speakers": {},
+			"name_suggestions": [],
+			"summary": None,
+			"key_points": [],
+			"action_items": [],
+			"preprocessed_transcript": None,
+			"communication_health_scores": {},
+			"aggregated_health": {},
+			"health_explanation": None,
+			"status": "ready",
+			"error": None,
+		}
+		
+		# Run workflow starting from summarize node (skip audio processing)
+		# Actually, we should run the full workflow but it will skip audio nodes if segments already exist
+		# Let's run from preprocess_transcript by invoking with the state already set
+		final_state = asr_workflow.invoke(initial_state)
+		
+		# Extract communication health results
+		return WorkflowResponse(
+			workflow_id=workflow_id,
+			mode="meeting",
+			status="completed",
+			result={
+				"meeting_id": request.meeting_id,
+				"aggregated_health": final_state.get("aggregated_health", {}),
+				"health_explanation": final_state.get("health_explanation", ""),
+				"communication_health_scores": final_state.get("communication_health_scores", {}),
+				"summary": final_state.get("summary", ""),
+				"key_points": final_state.get("key_points", []),
+				"action_items": final_state.get("action_items", []),
+				"transcript_length": sum(len(seg.get("text", "")) for seg in merged_segments),
+				"segments_count": len(merged_segments),
+				"speakers_count": len(speaker_labels)
+			}
+		)
+	except HTTPException:
+		raise
+	except Exception as e:
+		logger = logging.getLogger(__name__)
+		logger.error(f"Meeting workflow failed: {e}", exc_info=True)
+		return WorkflowResponse(
+			workflow_id=workflow_id,
+			mode="meeting",
+			status="failed",
+			result={"error": str(e)}
+		)
 

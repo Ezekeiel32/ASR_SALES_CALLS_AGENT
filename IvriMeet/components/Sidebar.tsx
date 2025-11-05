@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
-import { HomeIcon, UsersIcon, MicIcon, SettingsIcon } from './IconComponents';
+import { HomeIcon, UsersIcon, MicIcon, SettingsIcon, AnalyticsIcon } from './IconComponents';
 
 interface SidebarProps {
   currentPage: string;
@@ -59,6 +59,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isMobile = f
           <NavItem icon={<HomeIcon width={22} height={22}/>} label="דשבורד" page="dashboard" currentPage={currentPage} onNavigate={onNavigate} />
           <NavItem icon={<UsersIcon width={22} height={22}/>} label="דוברים" page="speakers" currentPage={currentPage} onNavigate={onNavigate} />
           <NavItem icon={<MicIcon width={22} height={22}/>} label="פגישה חיה" page="live" currentPage={currentPage} onNavigate={onNavigate} />
+          <NavItem icon={<AnalyticsIcon width={22} height={22}/>} label="אנליטיקה" page="analytics" currentPage={currentPage} onNavigate={onNavigate} />
         </ul>
       </nav>
       <div style={userProfileStyle}>

@@ -75,11 +75,45 @@ class User(Base):
 	organization: Mapped["Organization"] = relationship(
 		"Organization", back_populates="users"
 	)
+	gmail_credentials: Mapped["UserGmailCredentials | None"] = relationship(
+		"UserGmailCredentials", back_populates="user", uselist=False
+	)
 
 	__table_args__ = (Index("idx_users_organization_id", "organization_id"),)
 
 	def __repr__(self) -> str:
 		return f"<User(id={self.id}, email={self.email})>"
+
+
+class UserGmailCredentials(Base):
+	"""Stores Gmail OAuth credentials per user."""
+
+	__tablename__ = "user_gmail_credentials"
+
+	id: Mapped[uuid.UUID] = mapped_column(UUID, primary_key=True, default=uuid.uuid4)
+	user_id: Mapped[uuid.UUID] = mapped_column(
+		UUID, ForeignKey("users.id"), unique=True, nullable=False
+	)
+	# Store the full OAuth token JSON as encrypted text
+	token_json: Mapped[str] = mapped_column(Text, nullable=False)
+	# Store Gmail email address for verification
+	gmail_email: Mapped[str | None] = mapped_column(VARCHAR(255), nullable=True)
+	created_at: Mapped[datetime] = mapped_column(
+		TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc)
+	)
+	updated_at: Mapped[datetime] = mapped_column(
+		TIMESTAMP(timezone=True),
+		default=lambda: datetime.now(timezone.utc),
+		onupdate=lambda: datetime.now(timezone.utc),
+	)
+
+	# Relationships
+	user: Mapped["User"] = relationship("User", back_populates="gmail_credentials")
+
+	__table_args__ = (Index("idx_gmail_credentials_user_id", "user_id"),)
+
+	def __repr__(self) -> str:
+		return f"<UserGmailCredentials(user_id={self.user_id}, gmail_email={self.gmail_email})>"
 
 
 class Speaker(Base):

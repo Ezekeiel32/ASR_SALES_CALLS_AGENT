@@ -10,6 +10,7 @@ from agent_service.database.models import (
 	TranscriptionSegment,
 	Speaker,
 	User,
+	UserGmailCredentials,
 )
 
 __all__ = [
@@ -24,5 +25,6 @@ __all__ = [
 	"TranscriptionSegment",
 	"Speaker",
 	"User",
+	"UserGmailCredentials",
 ]
 

@@ -7,6 +7,7 @@ import MeetingDetailPage from './components/MeetingDetailPage';
 import SpeakersPage from './components/SpeakersPage';
 import SettingsPage from './components/SettingsPage';
 import LiveMeetingPage from './components/LiveMeetingPage';
+import AnalyticsPage from './components/AnalyticsPage';
 import UploadModal from './components/UploadModal';
 import LoginModal from './components/LoginModal';
 import { Meeting, Speaker, MeetingStatus, apiMeetingToUIMeeting } from './types';
@@ -31,6 +32,7 @@ const App: React.FC = () => {
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
   const [isUploadModalOpen, setUploadModalOpen] = useState(false);
   const [isLoginModalOpen, setLoginModalOpen] = useState(false);
+  const [analyticsTab, setAnalyticsTab] = useState<'retail' | 'email'>('retail');
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [speakers, setSpeakers] = useState<Speaker[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,6 +63,9 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
       setLoginModalOpen(true);
+    } else if (isAuthenticated) {
+      // Close modal when user becomes authenticated
+      setLoginModalOpen(false);
     }
   }, [authLoading, isAuthenticated]);
 
@@ -195,6 +200,8 @@ const App: React.FC = () => {
         return <SpeakersPage speakers={speakers} />;
       case 'live':
         return <LiveMeetingPage />;
+      case 'analytics':
+        return <AnalyticsPage onBack={() => navigateTo('dashboard')} initialTab={analyticsTab} />;
       case 'settings':
         return <SettingsPage />;
       default:
@@ -243,7 +250,59 @@ const App: React.FC = () => {
         position: 'relative'
       }}>
         <Header 
-          onNewMeetingClick={() => setUploadModalOpen(true)} 
+          onNewMeetingClick={() => setUploadModalOpen(true)}
+          onGmailClick={async () => {
+            try {
+              // Check if Gmail is already connected
+              const status = await apiClient.getGmailStatus();
+              
+              if (status.connected) {
+                // Gmail is connected, navigate to email analysis
+                setAnalyticsTab('email');
+                navigateTo('analytics');
+              } else {
+                // Gmail not connected, initiate OAuth flow
+                const oauthData = await apiClient.initiateGmailOAuth();
+                
+                // Open OAuth popup window
+                const width = 500;
+                const height = 600;
+                const left = (window.screen.width - width) / 2;
+                const top = (window.screen.height - height) / 2;
+                
+                const popup = window.open(
+                  oauthData.authorization_url,
+                  'Gmail OAuth',
+                  `width=${width},height=${height},left=${left},top=${top},toolbar=no,location=no,status=no,menubar=no,scrollbars=yes`
+                );
+                
+                // Listen for OAuth callback message
+                const messageHandler = (event: MessageEvent) => {
+                  if (event.data.type === 'gmail_connected') {
+                    window.removeEventListener('message', messageHandler);
+                    popup?.close();
+                    
+                    // Navigate to email analysis
+                    setAnalyticsTab('email');
+                    navigateTo('analytics');
+                  }
+                };
+                
+                window.addEventListener('message', messageHandler);
+                
+                // Check if popup was closed manually
+                const checkClosed = setInterval(() => {
+                  if (popup?.closed) {
+                    clearInterval(checkClosed);
+                    window.removeEventListener('message', messageHandler);
+                  }
+                }, 1000);
+              }
+            } catch (error) {
+              console.error('Gmail OAuth failed:', error);
+              alert(`Failed to connect Gmail: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
+          }}
           onMenuClick={() => setMobileSidebarOpen(!isMobileSidebarOpen)}
           isMobile={isMobile}
         />
@@ -273,7 +332,7 @@ const App: React.FC = () => {
         </div>
       </main>
       <UploadModal isOpen={isUploadModalOpen} onClose={() => setUploadModalOpen(false)} onSuccess={handleUploadSuccess} />
-      <LoginModal isOpen={isLoginModalOpen} onClose={() => {}} />
+      <LoginModal isOpen={isLoginModalOpen} onClose={() => setLoginModalOpen(false)} />
     </div>
   );
 };

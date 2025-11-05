@@ -5,11 +5,12 @@ import { SearchIcon, BellIcon, ChevronDownIcon, LogoutIcon, SettingsIcon, PlusIc
 
 interface HeaderProps {
   onNewMeetingClick: () => void;
+  onGmailClick?: () => void;
   onMenuClick?: () => void;
   isMobile?: boolean;
 }
 
-const Header: React.FC<HeaderProps> = ({ onNewMeetingClick, onMenuClick, isMobile = false }) => {
+const Header: React.FC<HeaderProps> = ({ onNewMeetingClick, onGmailClick, onMenuClick, isMobile = false }) => {
   const { user, logout } = useAuth();
   const [isDropdownOpen, setDropdownOpen] = useState(false);
   
@@ -61,6 +62,30 @@ const Header: React.FC<HeaderProps> = ({ onNewMeetingClick, onMenuClick, isMobil
             </>
           )}
         </motion.button>
+
+        {/* Gmail Connect Button */}
+        {onGmailClick && (
+          <motion.button 
+            onClick={onGmailClick} 
+            style={isMobile ? mobileGmailButtonStyle : gmailButtonStyle}
+            whileHover={{ opacity: 0.9 }}
+            whileTap={{ scale: 0.98 }}
+            title="חבר חשבון Gmail לניתוח אימיילים"
+          >
+            <img 
+              src="/gmail-logo_brandlogos.net_eqenr.png" 
+              alt="Gmail" 
+              style={{ 
+                width: isMobile ? '100%' : '100%',
+                height: isMobile ? '100%' : '100%',
+                objectFit: 'contain',
+                display: 'block',
+                maxWidth: '100%',
+                maxHeight: '100%'
+              }} 
+            />
+          </motion.button>
+        )}
         
         {!isMobile && (
           <motion.button whileTap={{scale: 0.9}} style={iconButtonStyle}>
@@ -220,6 +245,40 @@ const mobileNewMeetingButtonStyle: React.CSSProperties = {
   transition: 'background-color 0.2s, transform 0.1s',
   minWidth: '44px',
   minHeight: '44px'
+};
+
+const gmailButtonStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: '0.6rem 1.25rem',
+  border: 'none',
+  borderRadius: '8px',
+  backgroundColor: 'rgba(196, 255, 221, 0.8)',
+  color: 'white',
+  cursor: 'pointer',
+  fontSize: '0.9rem',
+  fontWeight: 600,
+  transition: 'background-color 0.2s, transform 0.1s',
+  width: '150px',
+  minWidth: '150px',
+};
+
+const mobileGmailButtonStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: '0.25rem',
+  border: 'none',
+  borderRadius: '8px',
+  background: 'rgba(196, 255, 221, 0.8)',
+  cursor: 'pointer',
+  transition: 'opacity 0.2s, transform 0.1s',
+  boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+  minWidth: '44px',
+  minHeight: '44px',
+  width: '44px',
+  height: '44px'
 };
 
 const dropdownStyle: React.CSSProperties = {

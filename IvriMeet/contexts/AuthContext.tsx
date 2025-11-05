@@ -55,7 +55,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   const login = async (email: string, password: string) => {
-    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+    let API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+    // Override if pointing to Koyeb or production
+    if (API_BASE_URL.includes('koyeb') || API_BASE_URL.includes('netlify') || API_BASE_URL.includes('production')) {
+      API_BASE_URL = 'http://localhost:8000';
+    }
     let baseUrl = API_BASE_URL;
     if (baseUrl && !baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
       baseUrl = `https://${baseUrl}`;
@@ -141,7 +145,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const register = async (email: string, password: string, name: string, organizationName: string) => {
-    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+    let API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+    // Override if pointing to Koyeb or production
+    if (API_BASE_URL.includes('koyeb') || API_BASE_URL.includes('netlify') || API_BASE_URL.includes('production')) {
+      API_BASE_URL = 'http://localhost:8000';
+    }
     let baseUrl = API_BASE_URL;
     if (baseUrl && !baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
       baseUrl = `https://${baseUrl}`;

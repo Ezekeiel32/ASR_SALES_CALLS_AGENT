@@ -8,14 +8,19 @@ from typing import Any
 
 import numpy as np
 import torch
-import torchaudio
+try:
+    import torchaudio
+except ImportError:
+    torchaudio = None
 
 # Fix torchaudio compatibility issue with speechbrain
-if not hasattr(torchaudio, 'list_audio_backends'):
-    def list_audio_backends():
-        """Compatibility shim for torchaudio < 2.1"""
-        return ['soundfile']  # Default backend
-    torchaudio.list_audio_backends = list_audio_backends
+# Only set attribute if torchaudio is actually available
+if torchaudio is not None:
+    if not hasattr(torchaudio, 'list_audio_backends'):
+        def list_audio_backends():
+            """Compatibility shim for torchaudio < 2.1"""
+            return ['soundfile']  # Default backend
+        torchaudio.list_audio_backends = list_audio_backends
 
 # Configure HuggingFace to use minimal local cache (will be cleaned up)
 from agent_service.services.s3_model_storage import configure_huggingface_cache_for_s3

@@ -1,0 +1,19 @@
+{
+  "graphs": {
+    "email_health": "agent_service.xg_agent.agent:get_email_workflow",
+    "retail": "agent_service.xg_agent.agent:get_workflow",
+    "asr_meeting": "agent_service.xg_agent.asr_workflow:get_asr_workflow"
+  },
+  "env": ".env",
+  "dependencies": [
+    "langgraph",
+    "langchain",
+    "langchain-nvidia-ai-endpoints",
+    "pandas",
+    "xgboost",
+    "scikit-learn",
+    "google-api-python-client",
+    "google-auth-oauthlib"
+  ]
+}
+

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Meeting, MeetingStatus } from '../types';
-import apiClient from '../services/api';
+import apiClient, { MeetingCommunicationHealth } from '../services/api';
 import { PencilIcon, TrashIcon, CopyIcon, MicIcon } from './IconComponents';
 import { useMobile } from '../hooks/useMobile';
 
@@ -304,9 +304,294 @@ const SpeakersView = ({ meeting, onRefresh }: { meeting: Meeting; onRefresh?: ()
 
 const AnalyticsView = ({ meeting }: { meeting: Meeting }) => {
     const isMobile = useMobile();
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [communicationHealth, setCommunicationHealth] = useState<MeetingCommunicationHealth | null>(null);
+    const [transcript, setTranscript] = useState<string>('');
+
+    useEffect(() => {
+        // Load communication health if available
+        if (meeting.id) {
+            loadCommunicationHealth();
+        }
+    }, [meeting.id]);
+
+    const loadCommunicationHealth = async () => {
+        if (!meeting.id) return;
+        try {
+            const health = await apiClient.getMeetingCommunicationHealth(meeting.id);
+            setCommunicationHealth(health);
+        } catch (err) {
+            // If not found, that's okay - user can run analysis
+            console.debug('Communication health not yet available:', err);
+        }
+    };
+
+    const runCommunicationHealthAnalysis = async () => {
+        if (!meeting.id) return;
+        
+        setLoading(true);
+        setError(null);
+        
+        try {
+            const result = await apiClient.runWorkflow('meeting', meeting.id);
+            if (result.status === 'completed' && result.result) {
+                // Extract communication health from result
+                const health: MeetingCommunicationHealth = {
+                    aggregated_health: result.result.aggregated_health || {},
+                    health_explanation: result.result.health_explanation || '',
+                    communication_health_scores: result.result.communication_health_scores || {}
+                };
+                setCommunicationHealth(health);
+            } else {
+                setError(result.result?.error || 'Analysis failed');
+            }
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to run communication health analysis');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return (
     <div style={getPanelStyle(isMobile)}>
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '1rem' : '2rem' }}>
+        {/* Communication Health Analysis Section */}
+        <div style={{ marginBottom: '2rem' }}>
+            <h3 style={chartTitleStyle}>Communication Health Analysis</h3>
+            <p style={{ color: '#6B7280', marginBottom: '1rem', fontSize: '0.9rem' }}>
+                Analyze meeting communication across 6 dimensions: clarity, completeness, correctness, courtesy, audience-centricity, and timeliness
+            </p>
+            
+            {!communicationHealth && (
+                <button
+                    onClick={runCommunicationHealthAnalysis}
+                    disabled={loading || !meeting.id}
+                    style={{
+                        padding: '0.75rem 1.5rem',
+                        backgroundColor: loading || !meeting.id ? '#94A3B8' : '#14B8A6',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '1rem',
+                        fontWeight: 600,
+                        cursor: loading || !meeting.id ? 'not-allowed' : 'pointer',
+                        marginBottom: '1rem',
+                    }}
+                >
+                    {loading ? 'Analyzing Communication Health...' : 'Run Communication Health Analysis'}
+                </button>
+            )}
+
+            {error && (
+                <div style={{
+                    padding: '1rem',
+                    backgroundColor: '#FEE2E2',
+                    color: '#991B1B',
+                    borderRadius: '8px',
+                    marginBottom: '1rem',
+                }}>
+                    {error}
+                </div>
+            )}
+
+            {communicationHealth && (
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    style={{ marginTop: '1rem' }}
+                >
+                    {/* Overall Health Score */}
+                    {communicationHealth.aggregated_health?.overall !== undefined && (
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <h4 style={{ fontWeight: 600, marginBottom: '1rem', fontSize: '1.1rem' }}>
+                                Overall Communication Health
+                            </h4>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                <div style={{ flex: 1, backgroundColor: '#E2E8F0', borderRadius: '8px', height: '40px', overflow: 'hidden' }}>
+                                    <motion.div
+                                        initial={{ width: 0 }}
+                                        animate={{ width: `${communicationHealth.aggregated_health.overall * 100}%` }}
+                                        transition={{ duration: 0.8 }}
+                                        style={{
+                                            height: '100%',
+                                            backgroundColor: communicationHealth.aggregated_health.overall >= 0.8 ? '#10B981' :
+                                                communicationHealth.aggregated_health.overall >= 0.6 ? '#14B8A6' :
+                                                communicationHealth.aggregated_health.overall >= 0.4 ? '#F59E0B' : '#EF4444',
+                                        }}
+                                    />
+                                </div>
+                                <div style={{ minWidth: '100px', textAlign: 'right', fontSize: '1.5rem', fontWeight: 600 }}>
+                                    {(communicationHealth.aggregated_health.overall * 100).toFixed(1)}%
+                                </div>
+                            </div>
+                            <div style={{ marginTop: '0.5rem', fontSize: '0.875rem', color: '#64748B' }}>
+                                {communicationHealth.aggregated_health.overall >= 0.8 ? 'Excellent' :
+                                    communicationHealth.aggregated_health.overall >= 0.6 ? 'Good' :
+                                    communicationHealth.aggregated_health.overall >= 0.4 ? 'Fair' : 'Poor'} Communication Health
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Communication Health Dimensions */}
+                    {communicationHealth.aggregated_health?.dimensions && (
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <h4 style={{ fontWeight: 600, marginBottom: '1rem', fontSize: '1.1rem' }}>
+                                Dimension Scores
+                            </h4>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                {Object.entries(communicationHealth.aggregated_health.dimensions).map(([dimension, score]: [string, any]) => {
+                                    const dimensionLabels: Record<string, string> = {
+                                        clarity: 'Clarity & Conciseness',
+                                        completeness: 'Completeness',
+                                        correctness: 'Correctness & Coherence',
+                                        courtesy: 'Courtesy & Tone',
+                                        audience: 'Audience-Centricity',
+                                        timeliness: 'Timeliness & Efficiency'
+                                    };
+                                    const label = dimensionLabels[dimension] || dimension;
+                                    const healthColor = score >= 0.8 ? '#10B981' :
+                                        score >= 0.6 ? '#14B8A6' :
+                                        score >= 0.4 ? '#F59E0B' : '#EF4444';
+                                    
+                                    return (
+                                        <div key={dimension} style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                            <div style={{ minWidth: '200px', fontSize: '0.875rem', fontWeight: 500 }}>
+                                                {label}
+                                            </div>
+                                            <div style={{ flex: 1, backgroundColor: '#E2E8F0', borderRadius: '4px', height: '24px', overflow: 'hidden' }}>
+                                                <motion.div
+                                                    initial={{ width: 0 }}
+                                                    animate={{ width: `${score * 100}%` }}
+                                                    transition={{ duration: 0.8 }}
+                                                    style={{
+                                                        height: '100%',
+                                                        backgroundColor: healthColor,
+                                                    }}
+                                                />
+                                            </div>
+                                            <div style={{ minWidth: '60px', textAlign: 'right', fontSize: '0.875rem', color: '#64748B' }}>
+                                                {(score * 100).toFixed(1)}%
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Per-Speaker Health Scores */}
+                    {communicationHealth.aggregated_health?.per_speaker && Object.keys(communicationHealth.aggregated_health.per_speaker).length > 0 && (
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <h4 style={{ fontWeight: 600, marginBottom: '1rem', fontSize: '1.1rem' }}>
+                                Per-Speaker Health Scores
+                            </h4>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                {Object.entries(communicationHealth.aggregated_health.per_speaker).map(([speaker, score]: [string, any]) => {
+                                    const healthColor = score >= 0.8 ? '#10B981' :
+                                        score >= 0.6 ? '#14B8A6' :
+                                        score >= 0.4 ? '#F59E0B' : '#EF4444';
+                                    
+                                    return (
+                                        <div key={speaker} style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                            <div style={{ minWidth: '150px', fontSize: '0.875rem', fontWeight: 500 }}>
+                                                {speaker}
+                                            </div>
+                                            <div style={{ flex: 1, backgroundColor: '#E2E8F0', borderRadius: '4px', height: '24px', overflow: 'hidden' }}>
+                                                <motion.div
+                                                    initial={{ width: 0 }}
+                                                    animate={{ width: `${score * 100}%` }}
+                                                    transition={{ duration: 0.8 }}
+                                                    style={{
+                                                        height: '100%',
+                                                        backgroundColor: healthColor,
+                                                    }}
+                                                />
+                                            </div>
+                                            <div style={{ minWidth: '60px', textAlign: 'right', fontSize: '0.875rem', color: '#64748B' }}>
+                                                {(score * 100).toFixed(1)}%
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Detailed Dimension Analysis with Reasoning */}
+                    {communicationHealth.communication_health_scores && (
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <h4 style={{ fontWeight: 600, marginBottom: '1rem', fontSize: '1.1rem' }}>
+                                Detailed Dimension Analysis
+                            </h4>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                {Object.entries(communicationHealth.communication_health_scores).map(([dimension, data]: [string, any]) => {
+                                    const dimensionLabels: Record<string, string> = {
+                                        clarity: 'Clarity & Conciseness',
+                                        completeness: 'Completeness',
+                                        correctness: 'Correctness & Coherence',
+                                        courtesy: 'Courtesy & Tone',
+                                        audience: 'Audience-Centricity',
+                                        timeliness: 'Timeliness & Efficiency'
+                                    };
+                                    const label = dimensionLabels[dimension] || dimension;
+                                    
+                                    return (
+                                        <div key={dimension} style={{ backgroundColor: '#F8FAFC', padding: '1rem', borderRadius: '8px' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                                                <div style={{ fontWeight: 600 }}>{label}</div>
+                                                <div style={{ fontSize: '1.25rem', fontWeight: 600 }}>
+                                                    {data.overall ? (data.overall * 100).toFixed(1) : 'N/A'}%
+                                                </div>
+                                            </div>
+                                            {data.reasoning && (
+                                                <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0, lineHeight: '1.5' }}>
+                                                    {data.reasoning}
+                                                </p>
+                                            )}
+                                            {/* Per-speaker breakdown for clarity and courtesy */}
+                                            {data.per_speaker && Object.keys(data.per_speaker).length > 0 && (
+                                                <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #E2E8F0' }}>
+                                                    <div style={{ fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.5rem', color: '#64748B' }}>
+                                                        Per-Speaker Scores:
+                                                    </div>
+                                                    {Object.entries(data.per_speaker).map(([speaker, score]: [string, any]) => (
+                                                        <div key={speaker} style={{ fontSize: '0.875rem', marginBottom: '0.25rem' }}>
+                                                            <span style={{ fontWeight: 500 }}>{speaker}:</span> {(score * 100).toFixed(1)}%
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Health Explanation */}
+                    {communicationHealth.health_explanation && (
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <h4 style={{ fontWeight: 600, marginBottom: '1rem', fontSize: '1.1rem' }}>
+                                Analysis Summary
+                            </h4>
+                            <div style={{
+                                backgroundColor: '#F8FAFC',
+                                padding: '1.5rem',
+                                borderRadius: '8px',
+                                whiteSpace: 'pre-wrap',
+                            }}>
+                                <p style={{ color: '#475569', lineHeight: '1.6', margin: 0, fontSize: '0.875rem' }}>
+                                    {communicationHealth.health_explanation}
+                                </p>
+                            </div>
+                        </div>
+                    )}
+                </motion.div>
+            )}
+        </div>
+
+        {/* Basic Analytics */}
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '1rem' : '2rem', marginTop: '2rem' }}>
             <div>
                 <h3 style={chartTitleStyle}>זמן דיבור</h3>
                 <div style={{...chartContainerStyle, height: '250px'}}>
@@ -324,7 +609,35 @@ const AnalyticsView = ({ meeting }: { meeting: Meeting }) => {
             <div>
                 <h3 style={chartTitleStyle}>ניתוח סנטימנט</h3>
                 <div style={{...chartContainerStyle, height: '250px'}}>
-                    <p>תרשים סנטימנט לאורך זמן...</p>
+                    {xgAnalysis?.analysis?.sentiment ? (
+                        <div>
+                            <p style={{ fontWeight: 600, marginBottom: '0.5rem' }}>
+                                {xgAnalysis.analysis.sentiment.overall_sentiment || 'Sentiment Analysis Available'}
+                            </p>
+                            {xgAnalysis.analysis.sentiment.sentiment_score !== undefined && (
+                                <div style={{
+                                    width: '100%',
+                                    height: '20px',
+                                    backgroundColor: '#E5E7EB',
+                                    borderRadius: '4px',
+                                    overflow: 'hidden',
+                                    marginTop: '0.5rem',
+                                }}>
+                                    <motion.div
+                                        initial={{ width: 0 }}
+                                        animate={{ width: `${xgAnalysis.analysis.sentiment.sentiment_score * 100}%` }}
+                                        transition={{ duration: 0.8 }}
+                                        style={{
+                                            height: '100%',
+                                            backgroundColor: '#14B8A6',
+                                        }}
+                                    />
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <p>תרשים סנטימנט לאורך זמן...</p>
+                    )}
                 </div>
             </div>
         </div>
