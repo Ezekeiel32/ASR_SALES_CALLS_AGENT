@@ -1,6 +1,7 @@
 """
 RunPod Serverless FastAPI Server - Consolidated Backend
 This replaces the separate API server and worker - everything runs in RunPod Serverless.
+NO AWS S3 - All storage is local in RunPod container.
 """
 
 from __future__ import annotations
@@ -41,7 +42,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="IvriMeet Backend API - RunPod Serverless",
     version="1.0.0",
-    description="Consolidated backend API running on RunPod Serverless"
+    description="Consolidated backend API running on RunPod Serverless - Local Storage Only"
 )
 
 settings = get_settings()
@@ -51,8 +52,6 @@ service = AgentService(settings)
 
 def get_cors_origins() -> list[str]:
     """Get CORS origins from settings or use defaults."""
-    logger = logging.getLogger(__name__)
-    
     # Default development origins
     default_origins = [
         "http://localhost:3000",
@@ -153,6 +152,7 @@ async def root() -> dict[str, str]:
         "service": "IvriMeet Backend API",
         "version": "1.0.0",
         "mode": "runpod-serverless",
+        "storage": "local-only",
         "status": "running"
     }
 
@@ -296,50 +296,23 @@ async def upload_meeting(
     """
     Upload a new audio file for processing.
     Creates a meeting record and triggers async processing.
+    Audio stored locally in RunPod container.
     """
-    import boto3
-    
     try:
         org_id = organization.id
-        audio_s3_key = None
-        audio_bytes = None
         
-        if file:
-            logger.info(f"Reading uploaded file: {file.filename}")
-            audio_bytes = await file.read()
-            logger.info(f"Read {len(audio_bytes)/(1024*1024):.1f}MB from uploaded file")
-            
-            # Upload to S3 if configured
-            if settings.s3_bucket:
-                logger.info(f"Uploading to S3 bucket: {settings.s3_bucket}")
-                s3_client = boto3.client(
-                    "s3",
-                    region_name=settings.s3_region,
-                    aws_access_key_id=settings.aws_access_key_id,
-                    aws_secret_access_key=settings.aws_secret_access_key,
-                )
-                audio_s3_key = f"meetings/{org_id}/{uuid.uuid4()}/{file.filename or 'audio.wav'}"
-                s3_client.put_object(
-                    Bucket=settings.s3_bucket,
-                    Key=audio_s3_key,
-                    Body=audio_bytes,
-                    ContentType=file.content_type or "audio/wav",
-                )
-                logger.info(f"Successfully uploaded to S3: {audio_s3_key}")
-            else:
-                # Save to local storage
-                uploads_dir = "./uploads/meetings"
-                os.makedirs(uploads_dir, exist_ok=True)
-                temp_meeting_id = uuid.uuid4()
-                local_path = f"{uploads_dir}/{temp_meeting_id}_{file.filename or 'audio.wav'}"
-                with open(local_path, "wb") as f:
-                    f.write(audio_bytes)
-                audio_s3_key = os.path.abspath(local_path)
-                logger.info(f"Saved to local storage: {audio_s3_key}")
-        else:
+        if not file:
             raise HTTPException(status_code=400, detail="File upload required")
         
-        # Create meeting record
+        logger.info(f"Reading uploaded file: {file.filename}")
+        audio_bytes = await file.read()
+        logger.info(f"Read {len(audio_bytes)/(1024*1024):.1f}MB from uploaded file")
+        
+        # Save to local storage in RunPod container (no S3)
+        uploads_dir = "/app/uploads/meetings"
+        os.makedirs(uploads_dir, exist_ok=True)
+        
+        # Create meeting record first to get ID
         meeting_title = title.strip() if title and title.strip() else (file.filename or "New Meeting")
         if meeting_title.endswith(('.mp3', '.wav', '.m4a', '.aac', '.webm')):
             meeting_title = meeting_title.rsplit('.', 1)[0]
@@ -347,26 +320,27 @@ async def upload_meeting(
         meeting = Meeting(
             organization_id=org_id,
             title=meeting_title,
-            audio_s3_key=audio_s3_key or "pending",
+            audio_s3_key="pending",
             status="pending",
         )
         db.add(meeting)
         db.commit()
         db.refresh(meeting)
         
-        # Update local path with actual meeting ID if using local storage
-        if not settings.s3_bucket and audio_s3_key:
-            old_path = audio_s3_key
-            new_path = os.path.abspath(f"{uploads_dir}/{meeting.id}_{file.filename or 'audio.wav'}")
-            if old_path != new_path:
-                os.rename(old_path, new_path)
-            audio_s3_key = new_path
-            meeting.audio_s3_key = new_path
-            db.commit()
+        # Save file with meeting ID
+        local_path = f"{uploads_dir}/{meeting.id}_{file.filename or 'audio.wav'}"
+        with open(local_path, "wb") as f:
+            f.write(audio_bytes)
+        
+        # Update meeting with actual file path
+        meeting.audio_s3_key = local_path
+        db.commit()
+        
+        logger.info(f"Saved to local storage: {local_path}")
         
         # Trigger async processing in background
         asyncio.create_task(
-            process_meeting_async(meeting.id, org_id, audio_s3_key)
+            process_meeting_async(meeting.id, org_id, local_path)
         )
         
         logger.info(f"Meeting {meeting.id} uploaded successfully, processing started")
@@ -387,18 +361,18 @@ async def upload_meeting(
 async def process_meeting_async(
     meeting_id: uuid.UUID,
     organization_id: uuid.UUID,
-    audio_s3_key: str | None,
+    audio_path: str,
 ):
     """Background task to process meeting."""
     from agent_service.database.connection import get_db_session
     
     try:
         with get_db_session() as db:
-            orchestrator = ProcessingOrchestrator(db)
+            orchestrator = ProcessingOrchestrator(db, s3_bucket=None)
             await orchestrator.process_meeting(
                 meeting_id=meeting_id,
                 organization_id=organization_id,
-                audio_s3_key=audio_s3_key,
+                audio_s3_key=audio_path,
             )
         logger.info(f"Successfully processed meeting {meeting_id}")
     except Exception as e:
@@ -533,7 +507,7 @@ async def delete_meeting(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> JSONResponse:
-    """Delete a meeting and all associated data."""
+    """Delete a meeting and all associated data from local storage."""
     try:
         meeting_uuid = uuid.UUID(meeting_id)
     except ValueError:
@@ -553,39 +527,19 @@ async def delete_meeting(
         )
     
     meeting_title = meeting.title
-    audio_s3_key = meeting.audio_s3_key
+    audio_path = meeting.audio_s3_key
     
-    # Delete audio file
+    # Delete audio file from local storage
     audio_deleted = False
     try:
-        if audio_s3_key and audio_s3_key != "pending":
-            if settings.s3_bucket and not os.path.exists(audio_s3_key):
-                # S3 file
-                import boto3
-                from botocore.exceptions import ClientError
-                s3_client = boto3.client(
-                    "s3",
-                    region_name=settings.s3_region,
-                    aws_access_key_id=settings.aws_access_key_id,
-                    aws_secret_access_key=settings.aws_secret_access_key,
-                )
-                try:
-                    s3_client.head_object(Bucket=settings.s3_bucket, Key=audio_s3_key)
-                    s3_client.delete_object(Bucket=settings.s3_bucket, Key=audio_s3_key)
-                    audio_deleted = True
-                    logger.info(f"Deleted audio file from S3: {audio_s3_key}")
-                except ClientError:
-                    pass
-            else:
-                # Local file
-                if os.path.exists(audio_s3_key):
-                    os.remove(audio_s3_key)
-                    audio_deleted = True
-                    logger.info(f"Deleted local audio file: {audio_s3_key}")
+        if audio_path and audio_path != "pending" and os.path.exists(audio_path):
+            os.remove(audio_path)
+            audio_deleted = True
+            logger.info(f"Deleted local audio file: {audio_path}")
     except Exception as e:
         logger.error(f"Error deleting audio file: {e}")
     
-    # Delete meeting record
+    # Delete meeting record from database
     try:
         db.delete(meeting)
         db.commit()
@@ -735,7 +689,7 @@ if __name__ == "__main__":
     host = os.getenv("HOST", "0.0.0.0")
     
     logger.info(f"Starting IvriMeet Backend API on {host}:{port}")
-    logger.info(f"RunPod Serverless Mode - Consolidated Backend")
+    logger.info(f"RunPod Serverless Mode - Local Storage Only (NO AWS)")
     
     uvicorn.run(
         app,
