@@ -1,21 +1,23 @@
 // API Client for IvriMeet Backend
-// Force localhost for development
+// Production-ready API configuration
+
+// Get API URL from environment variable with fallback to localhost for development
 let API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
-// Override if it's pointing to Koyeb or production
-if (API_BASE_URL.includes('koyeb') || API_BASE_URL.includes('netlify') || API_BASE_URL.includes('production')) {
-  API_BASE_URL = 'http://localhost:8000';
-}
-
-// Ensure URL has protocol (but don't force https for localhost)
+// Ensure URL has protocol
 if (API_BASE_URL && !API_BASE_URL.startsWith('http://') && !API_BASE_URL.startsWith('https://')) {
-  // Only add https if it's not localhost
+  // Add https for production domains, http for localhost
   if (API_BASE_URL.includes('localhost') || API_BASE_URL.includes('127.0.0.1')) {
     API_BASE_URL = `http://${API_BASE_URL}`;
   } else {
     API_BASE_URL = `https://${API_BASE_URL}`;
   }
 }
+
+// Remove trailing slash if present
+API_BASE_URL = API_BASE_URL.replace(/\/$/, '');
+
+console.log('[API Client] Using backend URL:', API_BASE_URL);
 
 export interface Meeting {
   id: string;
@@ -631,4 +633,3 @@ class ApiClient {
 
 export const apiClient = new ApiClient();
 export default apiClient;
-
