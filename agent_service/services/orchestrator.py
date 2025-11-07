@@ -27,7 +27,17 @@ from agent_service.services.name_extractor import NameExtractor
 from agent_service.services.name_suggestion_service import NameSuggestionService
 from agent_service.services.snippet_extractor import SnippetExtractor
 from agent_service.services.speaker_service import SpeakerService
-from agent_service.services.voiceprint_service import VoiceprintService
+# Lazy import for VoiceprintService to avoid torch import in API server
+def _get_voiceprint_service():
+	"""Lazy import to avoid torch import in API server (only needed in RunPod workers)."""
+	try:
+		from agent_service.services.voiceprint_service import VoiceprintService
+		return VoiceprintService
+	except (ImportError, Exception) as e:
+		logger.warning(f"VoiceprintService not available: {e}. Voiceprint generation will be disabled.")
+		return None
+
+VoiceprintService = _get_voiceprint_service()
 from agent_service.summarizers.nvidia import NvidiaDeepSeekSummarizer
 
 logger = logging.getLogger(__name__)

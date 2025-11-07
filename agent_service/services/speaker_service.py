@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from agent_service.database.models import Organization, Speaker
-from agent_service.services.voiceprint_service import VoiceprintService
+
+if TYPE_CHECKING:
+	from agent_service.services.voiceprint_service import VoiceprintService
 
 logger = logging.getLogger(__name__)
 
@@ -23,16 +25,22 @@ class SpeakerService:
 	- Speaker name assignment and persistence
 	"""
 
-	def __init__(self, db: Session, voiceprint_service: VoiceprintService | None = None) -> None:
+	def __init__(self, db: Session, voiceprint_service: "VoiceprintService | None" = None) -> None:
 		"""
 		Initialize the speaker service.
 
 		Args:
 			db: Database session
-			voiceprint_service: Optional VoiceprintService instance (creates new one if None)
+			voiceprint_service: Optional VoiceprintService instance (creates new one if None, lazy import)
 		"""
 		self.db = db
-		self.voiceprint_service = voiceprint_service or VoiceprintService()
+		# Lazy import VoiceprintService only if actually needed (not used in API server)
+		if voiceprint_service is None:
+			# Don't instantiate VoiceprintService - it's not used in API server
+			# Voiceprints are generated on RunPod workers, not in the API server
+			self.voiceprint_service = None
+		else:
+			self.voiceprint_service = voiceprint_service
 
 	def create_speaker(
 		self,

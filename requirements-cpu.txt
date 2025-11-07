@@ -23,17 +23,15 @@ celery>=5.3.4,<6.0.0
 redis>=5.0.1,<6.0.0
 runpod>=1.0.0  # For RunPod Serverless endpoints
 
-# Audio Processing
-librosa>=0.10.1,<0.11.0
-soundfile>=0.12.1,<0.13.0
-pydub>=0.25.1,<0.26.0
+# Audio Processing - NOT NEEDED in API server
+# Audio processing (transcription, diarization, voiceprint) happens on RunPod Serverless GPU workers
+# librosa, soundfile, pydub removed - only needed in RunPod workers (requirements.txt)
 
-# ML/AI
-torch>=2.1.0,<3.0.0
-torchaudio>=2.1.0,<3.0.0
-numpy>=1.24.0,<2.0.0  # Pin to < 2.0 for PyAnnote compatibility
-speechbrain>=0.5.16,<0.6.0
-pyannote.audio>=3.1.1,<4.0.0
+# ML/AI - NOT NEEDED in API server  
+# PyTorch and CUDA libraries removed - only needed in RunPod workers (requirements.txt)
+# The API server only handles HTTP requests and database operations
+# Heavy ML processing (diarization, voiceprint generation) runs on RunPod Serverless
+numpy>=1.24.0,<2.0.0  # Still needed for some data processing (XGBoost, pandas)
 
 # NLP
 spacy>=3.7.0,<4.0.0
@@ -54,4 +52,3 @@ google-auth-oauthlib>=1.2.0,<2.0.0
 python-jose[cryptography]>=3.3.0,<4.0.0
 passlib[bcrypt]>=1.7.4,<2.0.0
 bcrypt>=4.0.0,<5.0.0  # Pin bcrypt version for passlib compatibility
-
