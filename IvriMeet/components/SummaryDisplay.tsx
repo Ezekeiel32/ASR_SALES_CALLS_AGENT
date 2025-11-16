@@ -63,14 +63,24 @@ export const SummaryDisplay: React.FC<{ summary: McpSummary }> = ({ summary }) =
     } = summary?.content || {};
 
     const formatSummaryText = (text: string) => {
-        const lines = text.split('\\n');
+        const lines = text.split('\n');
         return lines.map((line, index) => {
-            if (line.startsWith('🎯') || line.startsWith('🧩') || line.startsWith('✅') || line.startsWith('📌') || line.startsWith('📈') || line.startsWith('⚠️')) {
-                const [emoji, ...rest] = line.split(' ');
-                return <p key={index} style={{ margin: '0.5rem 0' }}><span style={{ marginRight: '0.75rem' }}>{emoji}</span><strong>{rest.join(' ').split(':')[0]}:</strong> {rest.join(' ').split(':').slice(1).join(':')}</p>;
+            const trimmedLine = line.trim();
+            if (!trimmedLine) return null; // Skip empty lines
+            
+            if (trimmedLine.startsWith('🎯') || trimmedLine.startsWith('🧩') || trimmedLine.startsWith('✅') || trimmedLine.startsWith('📌') || trimmedLine.startsWith('📈') || trimmedLine.startsWith('⚠️')) {
+                const [emoji, ...rest] = trimmedLine.split(' ');
+                const restText = rest.join(' ');
+                const colonIndex = restText.indexOf(':');
+                if (colonIndex > 0) {
+                    const label = restText.substring(0, colonIndex);
+                    const content = restText.substring(colonIndex + 1).trim();
+                    return <p key={index} style={{ margin: '1rem 0', fontSize: '1rem' }}><span style={{ marginLeft: '0.5rem', fontSize: '1.2rem' }}>{emoji}</span><strong>{label}:</strong> {content}</p>;
+                }
+                return <p key={index} style={{ margin: '1rem 0' }}>{trimmedLine}</p>;
             }
-            return <p key={index} style={{ margin: '0.5rem 0' }}>{line}</p>;
-        });
+            return <p key={index} style={{ margin: '0.5rem 0' }}>{trimmedLine}</p>;
+        }).filter(Boolean);
     };
 
     return (
