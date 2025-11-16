@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Meeting, MeetingStatus } from '../types';
 import apiClient, { MeetingCommunicationHealth } from '../services/api';
 import { PencilIcon, TrashIcon, CopyIcon, MicIcon } from './IconComponents';
 import { useMobile } from '../hooks/useMobile';
+import { UnidentifiedSpeakerCard } from './UnidentifiedSpeakerCard';
+import { ActionItemsView } from './ActionItemsView';
+import { SummaryDisplay } from './SummaryDisplay'; // Import the new component
 
 const MeetingDetailPage: React.FC<{ meeting: Meeting; onBack: () => void; onRefresh?: () => void; }> = ({ meeting, onBack, onRefresh }) => {
-  const [activeTab, setActiveTab] = useState('transcript');
+  const [activeTab, setActiveTab] = useState('summary');
   const isMobile = useMobile();
 
   const getStatusInfo = (status: MeetingStatus) => {
@@ -166,38 +169,26 @@ const TranscriptView = ({ meeting }: { meeting: Meeting }) => {
 
 const SummaryView = ({ meeting }: { meeting: Meeting }) => {
     const isMobile = useMobile();
-    const [summary, setSummary] = useState(meeting.summary || '');
+    const [summary, setSummary] = useState<any>(meeting.summary || null);
     const [isLoading, setIsLoading] = useState(false);
 
-    const createMarkup = (text: string) => {
-      // Basic markdown to HTML
-      text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-      text = text.replace(/\*(.*?)\*/g, '<em>$1</em>');
-      text = text.replace(/•\s(.*?)\n/g, '<li>$1</li>');
-      text = text.replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>');
-      return { __html: text };
-    };
-    
     const loadSummary = async () => {
         if (!meeting.id) return;
         try {
-        setIsLoading(true);
+            setIsLoading(true);
             const response = await apiClient.getMeetingSummary(meeting.id);
-            // Handle summary as string or JSON object
-            if (typeof response.summary === 'string') {
+            if (response.summary && typeof response.summary === 'object') {
                 setSummary(response.summary);
-            } else if (typeof response.summary === 'object') {
-                // If it's a JSON object, extract text or format it
-                const summaryText = (response.summary as any).text || JSON.stringify(response.summary, null, 2);
-                setSummary(summaryText);
+            } else if (meeting.status === MeetingStatus.Processing) {
+                setSummary({ content: { executive_summary: 'הפגישה עדיין בעיבוד. הסיכום יהיה זמין כאשר העיבוד יושלם.' } });
             } else {
-                setSummary('אין סיכום זמין.');
+                setSummary({ content: { executive_summary: 'אין סיכום זמין לפגישה זו.' } });
             }
         } catch (err) {
             console.error('Failed to load summary:', err);
-            setSummary('שגיאה בטעינת הסיכום.');
+            setSummary({ content: { executive_summary: 'שגיאה בטעינת הסיכום.' } });
         } finally {
-        setIsLoading(false);
+            setIsLoading(false);
         }
     };
     
@@ -205,14 +196,19 @@ const SummaryView = ({ meeting }: { meeting: Meeting }) => {
         if (!summary && meeting.id) {
             loadSummary();
         }
-    }, [meeting.id]);
+    }, [meeting.id, summary]);
 
     return (
         <div style={getPanelStyle(isMobile)}>
-            {isLoading ? <p>מייצר סיכום...</p> : 
-                <div style={{lineHeight: 1.7, color: '#374151', fontSize: isMobile ? '0.95rem' : '1rem'}} dangerouslySetInnerHTML={createMarkup(summary || 'אין סיכום זמין.')} />}
+            {isLoading ? (
+                <p>טוען סיכום...</p>
+            ) : summary ? (
+                <SummaryDisplay summary={summary} />
+            ) : (
+                <p>אין סיכום זמין.</p>
+            )}
         </div>
-    )
+    );
 };
 
 const SpeakersView = ({ meeting, onRefresh }: { meeting: Meeting; onRefresh?: () => void }) => {
@@ -230,14 +226,15 @@ const SpeakersView = ({ meeting, onRefresh }: { meeting: Meeting; onRefresh?: ()
         try {
             setLoading(true);
             const response = await apiClient.getUnidentifiedSpeakers(meeting.id);
-            // Convert response format to array of speakers with suggestions
-            const speakersArray = Object.entries(response.unidentified_speakers || {}).map(([label, suggestions]) => ({
+            // Convert response format to array of speakers with suggestions and snippet URLs
+            const speakersArray = Object.entries(response.unidentified_speakers || {}).map(([label, data]: [string, any]) => ({
                 label,
-                name_suggestions: suggestions.map(s => ({
+                snippet_url: data.snippet_url || data.snippet_path,
+                name_suggestions: data.suggestions?.map(s => ({
                     speaker_label: label,
                     suggested_name: s.name,
                     confidence: s.confidence,
-                })),
+                })) || [],
             }));
             setUnidentifiedSpeakers(speakersArray);
         } catch (err) {
@@ -260,46 +257,38 @@ const SpeakersView = ({ meeting, onRefresh }: { meeting: Meeting; onRefresh?: ()
     };
 
     return (
-    <div style={{...getPanelStyle(isMobile), display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(300px, 1fr))', gap: isMobile ? '1rem' : '1.5rem'}}>
-        {meeting.speakers?.map(speaker => (
-            <div key={speaker.id} style={speakerCardStyle}>
-                    <img src={speaker.avatarUrl || `https://i.pravatar.cc/150?u=${speaker.id}`} alt={speaker.name} style={{width: 50, height: 50, borderRadius: '50%'}}/>
-                <div style={{flex: 1}}>
-                        <h4 style={{margin: 0, fontWeight: 600}}>{speaker.name || speaker.label}</h4>
-                    <p style={{margin: 0, color: '#6B7280'}}>{speaker.label}</p>
-                </div>
-                <button style={{...iconButtonSmall, color: '#6B7280'}}><PencilIcon width={18} height={18}/></button>
-            </div>
-        ))}
-            {unidentifiedSpeakers.map((speaker: any) => (
-                <div key={speaker.label} style={{ ...speakerCardStyle, borderStyle: 'dashed', backgroundColor: '#F9FAFB' }}>
-            <div style={{width: 50, height: 50, borderRadius: '50%', backgroundColor: '#F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-                <MicIcon width={24} height={24} style={{color: '#9CA3AF'}}/>
-            </div>
-            <div style={{flex: 1}}>
-                        <h4 style={{margin: 0, fontWeight: 600}}>{speaker.label}</h4>
-                <p style={{margin: 0, color: '#6B7280'}}>דובר לא מזוהה</p>
-                        {speaker.name_suggestions && speaker.name_suggestions.length > 0 && (
-                            <p style={{margin: 0, color: '#14B8A6', fontSize: '0.85rem'}}>
-                                הצעה: {speaker.name_suggestions[0].suggested_name}
-                            </p>
-                        )}
+    <div style={{...getPanelStyle(isMobile), display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(350px, 1fr))', gap: isMobile ? '1rem' : '1.5rem'}}>
+            {meeting.speakers?.map(speaker => (
+                <motion.div 
+                    key={speaker.id} 
+                    style={speakerCardStyle}
+                    layout
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                >
+                    <img src={speaker.avatar_url || `https://i.pravatar.cc/150?u=${speaker.id}`} alt={speaker.name} style={{width: 50, height: 50, borderRadius: '50%', flexShrink: 0}}/>
+                    <div style={{flex: 1, minWidth: 0}}>
+                        <h4 style={{margin: 0, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{speaker.name || speaker.label}</h4>
+                        <p style={{margin: 0, color: '#6B7280', fontSize: '0.9rem'}}>{speaker.label}</p>
                     </div>
-                    <button 
-                        style={{...primaryButtonStyle, fontSize: '0.8rem', padding: '0.4rem 0.8rem'}}
-                        onClick={() => {
-                            const name = prompt('הכנס שם לדובר:', speaker.name_suggestions?.[0]?.suggested_name || '');
-                            if (name) {
-                                handleAssignName(speaker.label, name);
-                            }
-                        }}
-                    >
-                        שייך שם
-                    </button>
-            </div>
+                    <button style={{...iconButtonSmall, color: '#9CA3AF'}}><PencilIcon width={18} height={18}/></button>
+                </motion.div>
             ))}
-    </div>
-);
+            <AnimatePresence>
+                {unidentifiedSpeakers.map((speaker: any) => (
+                    <UnidentifiedSpeakerCard 
+                        key={speaker.label}
+                        speaker={speaker}
+                        meetingId={meeting.id}
+                        onNameAssigned={() => {
+                            onRefresh?.();
+                            loadUnidentifiedSpeakers();
+                        }}
+                    />
+                ))}
+            </AnimatePresence>
+        </div>
+    );
 };
 
 const AnalyticsView = ({ meeting }: { meeting: Meeting }) => {
@@ -334,18 +323,9 @@ const AnalyticsView = ({ meeting }: { meeting: Meeting }) => {
         setError(null);
         
         try {
-            const result = await apiClient.runWorkflow('meeting', meeting.id);
-            if (result.status === 'completed' && result.result) {
-                // Extract communication health from result
-                const health: MeetingCommunicationHealth = {
-                    aggregated_health: result.result.aggregated_health || {},
-                    health_explanation: result.result.health_explanation || '',
-                    communication_health_scores: result.result.communication_health_scores || {}
-                };
-                setCommunicationHealth(health);
-            } else {
-                setError(result.result?.error || 'Analysis failed');
-            }
+            // Use the dedicated communication health endpoint instead of the workflow endpoint
+            const health = await apiClient.getMeetingCommunicationHealth(meeting.id);
+            setCommunicationHealth(health);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to run communication health analysis');
         } finally {
@@ -608,36 +588,8 @@ const AnalyticsView = ({ meeting }: { meeting: Meeting }) => {
             </div>
             <div>
                 <h3 style={chartTitleStyle}>ניתוח סנטימנט</h3>
-                <div style={{...chartContainerStyle, height: '250px'}}>
-                    {xgAnalysis?.analysis?.sentiment ? (
-                        <div>
-                            <p style={{ fontWeight: 600, marginBottom: '0.5rem' }}>
-                                {xgAnalysis.analysis.sentiment.overall_sentiment || 'Sentiment Analysis Available'}
-                            </p>
-                            {xgAnalysis.analysis.sentiment.sentiment_score !== undefined && (
-                                <div style={{
-                                    width: '100%',
-                                    height: '20px',
-                                    backgroundColor: '#E5E7EB',
-                                    borderRadius: '4px',
-                                    overflow: 'hidden',
-                                    marginTop: '0.5rem',
-                                }}>
-                                    <motion.div
-                                        initial={{ width: 0 }}
-                                        animate={{ width: `${xgAnalysis.analysis.sentiment.sentiment_score * 100}%` }}
-                                        transition={{ duration: 0.8 }}
-                                        style={{
-                                            height: '100%',
-                                            backgroundColor: '#14B8A6',
-                                        }}
-                                    />
-                                </div>
-                            )}
-                        </div>
-                    ) : (
-                        <p>תרשים סנטימנט לאורך זמן...</p>
-                    )}
+                <div style={{...chartContainerStyle, height: '250px', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                    <p style={{ color: '#6B7280', fontSize: '0.9rem' }}>תרשים סנטימנט לאורך זמן...</p>
                 </div>
             </div>
         </div>
@@ -749,7 +701,7 @@ const panelStyle: React.CSSProperties = {
   width: '100%',
   boxSizing: 'border-box'
 };
-const speakerCardStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', borderRadius: '8px', border: '1px solid #E5E7EB', backgroundColor: '#fff' };
+const speakerCardStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', borderRadius: '12px', border: '1px solid #E5E7EB', backgroundColor: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' };
 const chartTitleStyle: React.CSSProperties = { fontSize: '1.25rem', fontWeight: 600, marginBottom: '1.5rem' };
 const chartContainerStyle: React.CSSProperties = { padding: '1rem', borderRadius: '8px', border: '1px solid #E5E7EB' };
 
