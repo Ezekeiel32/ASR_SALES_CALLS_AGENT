@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,16 +30,31 @@ class Settings(BaseSettings):
 	ivrit_model: str | None = None
 	ivrit_return_segments: bool = Field(default=True)
 
-	# Summarizer (NVIDIA DeepSeek only)
-	summarizer_provider: str = Field(default="nvidia")
-	nvidia_api_url: str = Field(default="https://integrate.api.nvidia.com/v1")
-	nvidia_api_key: str | None = None
-	nvidia_model: str = Field(default="deepseek-ai/deepseek-v3.1-terminus")
-	nvidia_temperature: float = Field(default=0.2)
-	nvidia_top_p: float = Field(default=0.7)
-	nvidia_max_tokens: int = Field(default=8192)
-	nvidia_enable_thinking: bool = Field(default=True)
-	nvidia_stream: bool = Field(default=False)
+	# RunPod (General)
+	runpod_api_key: str | None = Field(default=None, validation_alias="RUNPOD_API_KEY")
+
+	# WhisperX via RunPod
+	whisperx_endpoint_id: str | None = Field(default=None, validation_alias="WHISPERX_ENDPOINT_ID")
+
+	# AWS S3 (for audio storage)
+	aws_access_key_id: str | None = Field(default=None, validation_alias="AWS_ACCESS_KEY_ID")
+	aws_secret_access_key: str | None = Field(default=None, validation_alias="AWS_SECRET_ACCESS_KEY")
+	aws_region: str = Field(default="us-east-1", validation_alias="AWS_REGION")
+	s3_bucket_name: str | None = Field(default=None, validation_alias="S3_BUCKET_NAME")
+
+	# Summarizer settings
+	# Primary: OpenRouter (Grok)
+	summarizer_provider: str = Field(default="openrouter")
+	
+	# OpenRouter (Primary)
+	openrouter_api_key: str | None = Field(default=None, validation_alias="OPENROUTER_API_KEY")
+	openrouter_api_key0: str | None = Field(default=None, validation_alias="OPENROUTER_API_KEY0")
+	openrouter_base_url: str = Field(default="https://openrouter.ai/api/v1")
+	openrouter_model: str = Field(default="x-ai/grok-4-fast")
+
+	# Gemini API settings (For Embeddings ONLY)
+	gemini_api_key: str | None = Field(default=None, validation_alias="GEMINI_API_KEY")
+	gemini_api_key0: str | None = Field(default=None, validation_alias="GEMINI_API_KEY0")
 
 	# Database
 	# Supports Neon, Railway, or any PostgreSQL via DATABASE_URL
@@ -52,15 +67,9 @@ class Settings(BaseSettings):
 	# Redis (for Celery)
 	# Railway provides REDIS_URL automatically
 	redis_url: str | None = Field(
-		default=None,
+		default="redis://redis:6379/0",
 		validation_alias="REDIS_URL",
 	)
-
-	# Storage (S3)
-	s3_bucket: str | None = None
-	s3_region: str = Field(default="us-east-1")
-	aws_access_key_id: str | None = None
-	aws_secret_access_key: str | None = None
 
 	# PyAnnote
 	pyannote_model: str = Field(default="pyannote/speaker-diarization-3.1")
@@ -73,8 +82,31 @@ class Settings(BaseSettings):
 	)
 
 	# App
-	request_timeout_seconds: float = Field(default=120)
+	request_timeout_seconds: float = Field(default=300)  # 5 minutes for summarization (Gemini is faster)
 	log_level: str = Field(default="INFO")
+	jwt_secret_key: str = Field(
+		default="dev-secret-key-change-me",
+		validation_alias="JWT_SECRET_KEY",
+		description="JWT signing key. Override in production via JWT_SECRET_KEY env var.",
+	)
+
+	@model_validator(mode="after")
+	def _normalize_urls(self) -> "Settings":
+		if self.redis_url is not None:
+			cleaned = self.redis_url.strip()
+			if not cleaned:
+				self.redis_url = None
+			elif not cleaned.startswith(("redis://", "rediss://")):
+				self.redis_url = None
+			else:
+				# Fix for "Invalid SSL Certificate Requirements Flag: CERT_NONE"
+				if cleaned.startswith("rediss://") and "ssl_cert_reqs" not in cleaned:
+					if "?" in cleaned:
+						cleaned += "&ssl_cert_reqs=none"
+					else:
+						cleaned += "?ssl_cert_reqs=none"
+				self.redis_url = cleaned
+		return self
 
 	# XG Agent (LangGraph/XGBoost)
 	gmail_credentials_path: str | None = Field(default=None, description="Path to Gmail OAuth credentials JSON file (for OAuth client config only)")
@@ -88,6 +120,14 @@ class Settings(BaseSettings):
 
 	# LangSmith (optional - for LangGraph Studio tracing)
 	langsmith_api_key: str | None = Field(default=None, description="LangSmith API key for tracing and debugging")
+
+	# Email / SMTP Settings
+	smtp_server: str | None = Field(default=None, validation_alias="SMTP_SERVER")
+	smtp_port: int = Field(default=587, validation_alias="SMTP_PORT")
+	smtp_username: str | None = Field(default=None, validation_alias="SMTP_USERNAME")
+	smtp_password: str | None = Field(default=None, validation_alias="SMTP_PASSWORD")
+	smtp_from_email: str = Field(default="noreply@ivrimeet.ai", validation_alias="SMTP_FROM_EMAIL")
+	smtp_from_name: str = Field(default="IvreetMeet AI", validation_alias="SMTP_FROM_NAME")
 
 	model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore")
 
